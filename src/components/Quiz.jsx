@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { motion } from 'framer-motion';
 
 const Quiz = ({ quizData, onQuizComplete }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -39,44 +40,57 @@ const Quiz = ({ quizData, onQuizComplete }) => {
   };
 
   return (
-    <div className="card shadow-xl bg-base-100 p-6 w-full max-w-2xl">
-  <div className="text-center mb-5">
-    <h2 className="text-xl font-semibold">Question {currentQuestionIndex + 1}/10</h2>
-    <progress
-      className="progress progress-primary w-full my-2"
-      value={currentQuestionIndex + 1}
-      max="10"
-    ></progress>
-  </div>
+    <div className="card shadow-xl bg-base-100 p-6 w-full max-w-2xl"> 
+     <div className="text-center mb-5">
+      <h2 className="text-xl font-semibold">Question {currentQuestionIndex + 1}/10</h2>
+      <progress
+        className="progress progress-primary w-full my-2"
+       value={currentQuestionIndex + 1}
+       max="10"
+      >
+      </progress>
+    </div>
+    <motion.h3
+    initial={{ opacity: 0, y: -20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.4 }}
+    className="text-2xl font-bold mb-4 text-center"
+    >
+    {currentQuestion.question}
+    </motion.h3>
+    
 
-  <h3 className="text-2xl font-bold mb-4 text-center">{currentQuestion.question}</h3>
-
-  <div className="grid grid-cols-1 gap-4">
+    <div className="grid grid-cols-1 gap-4">
     {currentQuestion.choices.map((choice, idx) => (
-      <button
+      <motion.button
         key={idx}
         className={`btn ${
           selectedAnswer === choice ? "btn-primary" : "btn-outline"
         }`}
-        onClick={() => handleAnswerSelection(choice)}
+        initial={{ opacity: 0, x: 50 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: idx * 0.1 }}
+          onClick={() => handleAnswerSelection(choice)}
       >
         {choice}
-      </button>
+      </motion.button>
     ))}
-  </div>
+    </div>
 
-  <div className="mt-6 text-center font-semibold">
+   <div className="mt-6 text-center font-semibold">
     ⏰ {timeLeft}s remaining
-  </div>
+    </div>
 
-  <button
+    <motion.button
     className="btn btn-success mt-4"
     onClick={handleNextQuestion}
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
     disabled={!selectedAnswer}
-  >
+    >
     Next Question →
-  </button>
-</div>
+    </motion.button>
+  </div>
 
 
   );
