@@ -18,7 +18,7 @@ export async function generateQuizQuestions(pdfText) {
       "questions": [
         {
           "question": "Question text",
-          "choices": ["option1", "option2", "option3", "option4", "option5"],
+          "choices": ["option1", "option2", "option3", "option4"],
           "correctAnswer": "Correct option text"
         },
         ... (9 more questions)
