@@ -1,9 +1,9 @@
 import { useState } from "react";
 import Upload from "./components/Upload";
-import Quiz from "./components/quiz";
+import Quiz from "./components/Quiz";
 import { extractTextFromPDF } from "./utils/pdf";
 import { generateQuizQuestions } from "./utils/openai";
-
+import ThemeSwitcher from "./components/ThemeSwitcher";
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [quiz, setQuiz] = useState(null);
@@ -19,8 +19,13 @@ function App() {
   const handleSubmit = async () => {
     if (selectedFile) {
       setLoading(true);
+      console.log("📤 Extracting text...");
       const pdfText = await extractTextFromPDF(selectedFile);
+
+      console.log("📚 Generating quiz...");
       const quizQuestions = await generateQuizQuestions(pdfText);
+
+      console.log("🎉 Quiz generated:", quizQuestions);
       setQuiz(quizQuestions);
       setLoading(false);
     }
@@ -33,6 +38,7 @@ function App() {
 
   return (
     <div className="container mx-auto flex flex-col items-center justify-center min-h-screen">
+      <ThemeSwitcher />
       {!quiz && !quizCompleted && (
         <>
           <Upload
@@ -71,6 +77,7 @@ function App() {
           </button>
         </div>
       </div>
+      
       )}
     </div>
   );

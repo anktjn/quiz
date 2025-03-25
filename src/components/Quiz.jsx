@@ -78,6 +78,7 @@ const Quiz = ({ quizData, onQuizComplete }) => {
   </button>
 </div>
 
+
   );
 };
 

@@ -5,9 +5,17 @@ export default {
     "./src/**/*.{js,jsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['Merriweather', 'serif'],
+      },
+    },
   },
-  plugins: [require("daisyui")],
+  plugins: [
+    require("daisyui"),
+    require("@tailwindcss/typography") // 👈 typography plugin added here
+  ],
   daisyui: {
     themes: ["cupcake", "dark", "corporate"], // try these cool themes
   },

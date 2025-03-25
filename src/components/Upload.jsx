@@ -10,21 +10,28 @@ const Upload = ({ onFileUpload, selectedFile }) => {
   };
 
   return (
-    <div className="hero bg-base-200">
-      <div className="hero-content text-center">
-        <div className="max-w-md">
-          <h1 className="text-4xl font-bold">📚 QuizMaster AI</h1>
-          <p className="py-6">Upload a PDF document and instantly generate a 10-question interactive quiz!</p>
-          
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={handleFileChange}
-            className="file-input file-input-bordered file-input-primary w-full max-w-xs"
-          />
+    <div className="hero bg-base-400">
+  <div className="hero-content text-center">
+    <div className="max-w-md">
+      <h1 className="text-4xl font-bold">📚 QuizMaster AI</h1>
+      <p className="py-6">Upload a PDF document and instantly generate a 10-question interactive quiz!</p>
+      
+      <input
+        type="file"
+        accept=".pdf"
+        onChange={handleFileChange}
+        className="file-input file-input-bordered file-input-primary w-full max-w-xs"
+      />
+
+      {selectedFile && (
+        <div className="mt-4">
+          <p className="text-sm mb-2">Selected file: {selectedFile.name}</p>
         </div>
-      </div>
+      )}
     </div>
+  </div>
+</div>
+
   );
 };
 
