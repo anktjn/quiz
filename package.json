@@ -13,6 +13,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "axios": "^1.6.7",
     "daisyui": "^4.7.3",
+    "framer-motion": "^12.6.0",
     "openai": "^4.28.4",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.8.69",

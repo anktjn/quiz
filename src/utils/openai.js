@@ -10,7 +10,7 @@ export async function generateQuizQuestions(pdfText) {
     You are an educational assistant. Generate a quiz based on the text provided.  
     Requirements: 
     - Create 10 multiple-choice questions.
-    - Each question should have 1 correct answer and 4 incorrect answers.
+    - Each question should have 4 options total: 1 correct answer and 3 incorrect answers.
     - Clearly mark the correct answer.
     - Return the quiz as structured JSON exactly in this format:
     
