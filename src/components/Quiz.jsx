@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const Quiz = ({ quizData, onQuizComplete }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -40,7 +40,16 @@ const Quiz = ({ quizData, onQuizComplete }) => {
   };
 
   return (
-    <div className="card shadow-xl bg-base-100 p-6 w-full max-w-2xl"> 
+    <div className="card shadow-xl bg-base-100 p-6 w-[600px]">
+     <AnimatePresence mode="wait">
+     <motion.div
+          key={currentQuestionIndex}  // 👈 clearly changing key triggers re-animation
+          initial={{ opacity: 0, x: 50 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -50 }}
+          transition={{ duration: 0.4 }}
+          className="card bg-base-100 shadow-xl p-6 w-full max-w-2xl"
+        >
      <div className="text-center mb-5">
       <h2 className="text-xl font-semibold">Question {currentQuestionIndex + 1}/10</h2>
       <progress
@@ -58,8 +67,6 @@ const Quiz = ({ quizData, onQuizComplete }) => {
     >
     {currentQuestion.question}
     </motion.h3>
-    
-
     <div className="grid grid-cols-1 gap-4">
     {currentQuestion.choices.map((choice, idx) => (
       <motion.button
@@ -80,9 +87,8 @@ const Quiz = ({ quizData, onQuizComplete }) => {
    <div className="mt-6 text-center font-semibold">
     ⏰ {timeLeft}s remaining
     </div>
-
     <motion.button
-    className="btn btn-success mt-4"
+    className="btn btn-success mt-4 w-full"
     onClick={handleNextQuestion}
     whileHover={{ scale: 1.05 }}
     whileTap={{ scale: 0.95 }}
@@ -90,9 +96,9 @@ const Quiz = ({ quizData, onQuizComplete }) => {
     >
     Next Question →
     </motion.button>
+    </motion.div>
+    </AnimatePresence>
   </div>
-
-
   );
 };
 

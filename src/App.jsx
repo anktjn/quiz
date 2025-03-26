@@ -7,12 +7,23 @@ import ThemeSwitcher from "./components/ThemeSwitcher";
 import { AnimatePresence, motion } from 'framer-motion';
 import Result from "./components/Results";
 import Loading from "./components/Loading";
+import RestartApp from "./components/RestartApp";
 function App() { 
   const [selectedFile, setSelectedFile] = useState(null);
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(false);
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [score, setScore] = useState(0);
+
+  const generateQuizFromPDF = async (file) => {
+    setLoading(true);
+    const pdfText = await extractTextFromPDF(file);
+    const quizQuestions = await generateQuizQuestions(pdfText);
+    setQuiz(quizQuestions);
+    setQuizCompleted(false);
+    setScore(0);
+    setLoading(false);
+  };
 
   const handleFileUpload = (file) => {
     setSelectedFile(file);
@@ -33,10 +44,10 @@ function App() {
       setLoading(false);
     }
   };
-  const handleRestartQuiz = () => {
-    setQuizCompleted(false);
-    setQuiz(null);
-    setScore(0);
+  const handleRestartQuiz = async () => {
+    if (selectedFile) {
+      await generateQuizFromPDF(selectedFile);
+    }
   };
   
   const handleUploadNewPDF = () => {
@@ -55,6 +66,7 @@ function App() {
     <div className="container mx-auto flex flex-col items-center justify-center min-h-screen">
       <ThemeSwitcher />
       <AnimatePresence mode="wait">
+      <div className="relative"> 
       {!quiz && !quizCompleted && !loading && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -117,6 +129,8 @@ function App() {
         </div>
       </motion.div>
       )}
+      <RestartApp />
+      </div>
       </AnimatePresence>
     </div>
   );

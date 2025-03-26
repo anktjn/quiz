@@ -13,8 +13,8 @@ const Upload = ({ onFileUpload, selectedFile }) => {
     <div className="hero bg-base-400">
   <div className="hero-content text-center">
     <div className="max-w-md">
-      <h1 className="text-4xl font-bold">📚 QuizMaster AI</h1>
-      <p className="py-6">Upload a PDF document and instantly generate a 10-question interactive quiz!</p>
+      <h1 className="font-serif text-4xl font-bold">📚 QuizMaster AI</h1>
+      <p className="font-sans py-6">Upload a PDF document and instantly generate a 10-question interactive quiz!</p>
       
       <input
         type="file"
