@@ -7,9 +7,20 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        serif: ['Merriweather', 'serif'],
+        heading: ['Merriweather', 'serif'],
+        body: ['Inter', 'sans-serif'],
       },
+      typography: (theme) => ({
+        DEFAULT: {
+          css: {
+            h1: { fontFamily: theme('fontFamily.heading') },
+            h2: { fontFamily: theme('fontFamily.heading') },
+            h3: { fontFamily: theme('fontFamily.heading') },
+            p: { fontFamily: theme('fontFamily.body') },
+            a: { fontFamily: theme('fontFamily.body') },
+          },
+        },
+      }),
     },
   },
   plugins: [

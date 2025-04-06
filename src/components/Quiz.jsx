@@ -44,11 +44,11 @@ const Quiz = ({ quizData, onQuizComplete }) => {
      <AnimatePresence mode="wait">
      <motion.div
           key={currentQuestionIndex}  // 👈 clearly changing key triggers re-animation
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -50 }}
+          initial={{ opacity: 0, y: 50 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -50 }}
           transition={{ duration: 0.4 }}
-          className="card bg-base-100 shadow-xl p-6 w-full max-w-2xl"
+          // className="card bg-base-100 shadow-xl p-6 w-full max-w-2xl"
         >
      <div className="text-center mb-5">
       <h2 className="text-xl font-semibold">Question {currentQuestionIndex + 1}/10</h2>
