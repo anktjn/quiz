@@ -43,10 +43,10 @@ const Quiz = ({ quizData, onQuizComplete }) => {
     <div className="card shadow-xl bg-base-100 p-6 w-[600px]">
      <AnimatePresence mode="wait">
      <motion.div
-          key={currentQuestionIndex}  // 👈 clearly changing key triggers re-animation
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -50 }}
+          key={currentQuestionIndex}
+          initial={{ opacity: 0, y: 100 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -100 }}
           transition={{ duration: 0.4 }}
           className="card bg-base-100 shadow-xl p-6 w-full max-w-2xl"
         >

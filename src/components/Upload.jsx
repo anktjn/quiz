@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const Upload = ({ onFileUpload, selectedFile }) => {
+const Upload = ({ onFileUpload, selectedFile, onSubmit }) => {
   // const [selectedFile, setSelectedFile] = useState(null);
 
   const handleFileChange = (event) => {
@@ -10,8 +10,8 @@ const Upload = ({ onFileUpload, selectedFile }) => {
   };
 
   return (
-    <div className="hero bg-base-400">
-  <div className="hero-content text-center">
+    <div className="hero bg-base-400 justify-center min-h-screen flex items-center">
+    <div className="hero-content text-center">
     <div className="max-w-md">
       <h1 className="font-serif text-4xl font-bold">📚 QuizMaster AI</h1>
       <p className="font-sans py-6">Upload a PDF document and instantly generate a 10-question interactive quiz!</p>
@@ -26,6 +26,9 @@ const Upload = ({ onFileUpload, selectedFile }) => {
       {selectedFile && (
         <div className="mt-4">
           <p className="text-sm mb-2">Selected file: {selectedFile.name}</p>
+          <button onClick={onSubmit} className="btn btn-primary mt-4 w-full">
+            Generate Quiz 🚀
+          </button>
         </div>
       )}
     </div>
