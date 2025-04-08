@@ -15,7 +15,7 @@ import { supabase } from "./utils/supabase";
 import Dashboard from "./components/Dashboard";
 
 function App() { 
-  const [currentPDFId, setCurrentPDFId] = useState(null);
+  const [currentPdfId, setCurrentPdfId] = useState(null);
   const [view, setView] = useState("dashboard"); // or "upload", "quiz", "result"
   const [user, setUser] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -63,7 +63,7 @@ function App() {
 
   const handleFileUpload = (file) => {
     setSelectedFile(file);
-    console.log("✅ PDF Uploaded:", file);
+    console.log("📥 File selected:", file); // optional, but keep it clear
   };
 
   const handleSubmit = async () => {
@@ -71,15 +71,16 @@ function App() {
       setLoading(true);
       try {
         const fileUrl = await uploadPDF(selectedFile);
-        console.log("✅ PDF uploaded to Supabase Storage successfully, URL:", fileUrl);
   
-        const savedPDF = await savePDFMetadata({
+        const metadata = await savePDFMetadata({
           name: selectedFile.name,
           file_url: fileUrl,
-          user_id: user.id,
+          user_id: user.id
         });
   
-        setCurrentPDFId(savedPDF.id); // 💾 save the id for later
+        console.log("📄 PDF metadata returned:", metadata); // 🔍 Debug log
+        setCurrentPdfId(metadata.id);
+  
         await generateQuizFromPDF(selectedFile);
         setView("quiz");
       } catch (error) {
@@ -89,6 +90,9 @@ function App() {
       }
     }
   };
+  
+  
+  
   
   
 
@@ -106,28 +110,36 @@ function App() {
   };
 
 
-  const handleQuizComplete = async (finalScore) => {
-    setScore(finalScore);
-    setQuizCompleted(true);
-    console.log("🎯 Submitting quiz result...");
+  const handleQuizComplete = async (finalScore, pdfId) => {
+    if (!pdfId) {
+      console.error("⚠️ No currentPdfId set. Cannot save quiz.");
+      return;
+    }
   
-    const { error } = await supabase.from("quizzes").insert([
-      {
-        user_id: user.id,
-        score: finalScore,
-        date_taken: new Date(),
-        questions: JSON.stringify(quiz.questions),
-        pdf_name: selectedFile?.name,
-        pdf_id: currentPDFId, // ✅ this matches your foreign key
-      },
-    ]);
+    console.log("🎯 Submitting quiz result with pdfId:", pdfId);
+  
+    const { error } = await supabase.from("quizzes").insert({
+      user_id: user.id,
+      pdf_id: pdfId,
+      pdf_name: selectedFile.name,
+      score: finalScore,
+      date_taken: new Date(),
+    });
   
     if (error) {
-      console.error("❌ Failed to save quiz:", error.message);
+      console.error("❌ Failed to save quiz:", error);
     } else {
       console.log("✅ Quiz saved to Supabase");
+      setQuizCompleted(true);
     }
   };
+  
+  
+  
+  
+  
+  
+  
   
   
 
@@ -187,7 +199,9 @@ function App() {
                 exit={{ x: -100, opacity: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                <Quiz quizData={quiz} onQuizComplete={handleQuizComplete} />
+                <Quiz quizData={quiz} onQuizComplete={handleQuizComplete}
+                pdfId={currentPdfId} 
+                />
               </motion.div>
             )}
             {quizCompleted && (
