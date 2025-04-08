@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Quiz = ({ quizData, onQuizComplete }) => {
+const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
@@ -35,7 +35,7 @@ const Quiz = ({ quizData, onQuizComplete }) => {
     if (currentQuestionIndex < quizData.questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      onQuizComplete(score + (selectedAnswer === currentQuestion.correctAnswer ? 1 : 0));
+      onQuizComplete(score + (selectedAnswer === currentQuestion.correctAnswer ? 1 : 0), pdfId);
     }
   };
 

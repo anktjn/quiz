@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabase";
+import { motion } from "framer-motion";
+import { Book, Repeat, FilePlus } from "lucide-react";
 
-export default function Dashboard({ user, onStartNewQuiz }) {
+export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF }) {
   const [pdfs, setPdfs] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,16 +16,21 @@ export default function Dashboard({ user, onStartNewQuiz }) {
       .select("*")
       .eq("user_id", user.id);
 
-    const { data: quizData, error: quizError } = await supabase
+      const { data: quizData, error: quizError } = await supabase
       .from("quizzes")
-      .select("*")
+      .select("id, pdf_name, score, date_taken, user_id, pdf_id")
       .eq("user_id", user.id);
+       console.log("📄 Quizzes fetched:", quizData);
+    
+
 
     if (pdfError || quizError) {
       console.error("Error fetching data:", pdfError || quizError);
     } else {
-      setPdfs(pdfData);
-      setQuizzes(quizData);
+        console.log("📚 PDFs:", pdfData);
+        console.log("📝 Quizzes:", quizData);
+        setPdfs(pdfData);
+        setQuizzes(quizData);
     }
     setLoading(false);
   };
@@ -33,43 +40,71 @@ export default function Dashboard({ user, onStartNewQuiz }) {
   }, []);
 
   const totalScore = quizzes.reduce((sum, q) => sum + (q.score || 0), 0);
+  const avgScore = quizzes.length ? Math.round(totalScore / quizzes.length) : 0;
 
   return (
-    <div className="container mx-auto p-6">
-      
-      {/* User Summary Panel */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Welcome, {user.email}</h1>
-        <p className="text-gray-600">You’ve taken {quizzes.length} quizzes with a total score of {totalScore}</p>
-        <button className="btn btn-primary mt-4" onClick={onStartNewQuiz}>
-          Start New Quiz
-        </button>
+    <div className="w-full px-6 py-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-10">
+        <h1 className="text-4xl font-bold font-serif">📚 QuizMaster</h1>
+        <div className="flex items-center gap-4">
+          <button className="btn btn-sm btn-outline">🌓 Theme</button>
+          <div className="avatar placeholder">
+            <div className="bg-neutral text-neutral-content rounded-full w-10">
+              <span>{user.email[0].toUpperCase()}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* PDF Uploads Section */}
+      {/* Stats Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+        <div className="stat bg-base-200 p-4 rounded shadow">
+          <div className="stat-title">Total Books</div>
+          <div className="stat-value">{pdfs.length}</div>
+        </div>
+        <div className="stat bg-base-200 p-4 rounded shadow">
+          <div className="stat-title">Total Quizzes</div>
+          <div className="stat-value">{quizzes.length}</div>
+        </div>
+        <div className="stat bg-base-200 p-4 rounded shadow">
+          <div className="stat-title">Average Score</div>
+          <div className="stat-value">{avgScore}/10</div>
+        </div>
+      </div>
+
+      {/* Your Books Section */}
       <div className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4">Your Uploaded PDFs</h2>
-        {pdfs.length === 0 ? (
-          <p className="text-gray-500">No PDFs uploaded yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {pdfs.map((pdf) => (
-              <div key={pdf.id} className="card bg-base-100 shadow-md p-4">
-                <h3 className="text-xl font-medium">{pdf.name}</h3>
-                <p className="text-sm text-gray-500">Uploaded on: {new Date(pdf.uploaded_at).toLocaleDateString()}</p>
-                <a
-                  href={pdf.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline btn-sm mt-2"
-                >
-                  View PDF
-                </a>
-                <button className="btn btn-accent btn-sm mt-2">Generate New Quiz</button>
+        <h2 className="text-2xl font-semibold mb-4">Your Books</h2>
+        <div className="flex gap-4 overflow-x-auto pb-2">
+          {pdfs.map((pdf) => (
+            <div key={pdf.id} className="card w-60 bg-base-100 shadow-md">
+              <figure className="h-40 bg-base-200 flex items-center justify-center">
+                <Book size={48} />
+              </figure>
+              <div className="card-body">
+                <h3 className="card-title text-lg font-bold">{pdf.name}</h3>
+                <p className="text-sm text-gray-500">Quizzes played: {quizzes.filter(q => q.pdf_name === pdf.name).length}</p>
+                <div className="card-actions justify-between mt-2">
+                  <a href={pdf.file_url} target="_blank" className="btn btn-sm btn-outline">Read</a>
+                  <button
+                    className="btn btn-sm btn-accent"
+                    onClick={() => onGenerateFromPDF(pdf.file_url)}
+                  >
+                    Play Quiz
+                  </button>
+                </div>
               </div>
-            ))}
+            </div>
+          ))}
+          {/* Add Book Card */}
+          <div className="card w-60 bg-base-100 border-dashed border-2 flex flex-col items-center justify-center cursor-pointer" onClick={onStartNewQuiz}>
+            <div className="text-center p-6">
+              <FilePlus size={32} className="mx-auto mb-2" />
+              <p className="font-medium">Add Book</p>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Recent Quizzes Section */}
@@ -78,14 +113,22 @@ export default function Dashboard({ user, onStartNewQuiz }) {
         {quizzes.length === 0 ? (
           <p className="text-gray-500">You haven't taken any quizzes yet.</p>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {quizzes.map((quiz) => (
-              <div key={quiz.id} className="card bg-base-100 shadow-md p-4">
-                <h3 className="text-lg font-medium">Quiz on: {quiz.pdf_name || "Untitled PDF"}</h3>
-                <p className="text-sm text-gray-600">Score: {quiz.score}/10</p>
-                <p className="text-sm text-gray-600">Taken on: {new Date(quiz.created_at).toLocaleString()}</p>
-                <button className="btn btn-secondary btn-sm mt-2">Retake Quiz</button>
-              </div>
+              <motion.div
+                key={quiz.id}
+                className="card bg-base-100 shadow p-4"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <h3 className="text-lg font-semibold mb-1">{quiz.pdf_name}</h3>
+                <p className="text-sm text-gray-500">Score: {quiz.score}/10</p>
+                <p className="text-sm text-gray-400">{new Date(quiz.date_taken).toLocaleString()}</p>
+                <button className="btn btn-sm btn-secondary mt-3">
+                  <Repeat className="w-4 h-4 mr-2" /> Retake Quiz
+                </button>
+              </motion.div>
             ))}
           </div>
         )}
