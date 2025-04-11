@@ -24,6 +24,8 @@ function App() {
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [score, setScore] = useState(0);
 
+
+
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -67,29 +69,70 @@ function App() {
   };
 
   const handleSubmit = async () => {
-    if (selectedFile) {
-      setLoading(true);
-      try {
-        const fileUrl = await uploadPDF(selectedFile);
+    if (!selectedFile) return;
   
-        const metadata = await savePDFMetadata({
-          name: selectedFile.name,
-          file_url: fileUrl,
-          user_id: user.id
-        });
+    setLoading(true);
+    try {
+      // 🔍 Check for duplicates
+      const { data: matches, error: checkError } = await supabase
+        .from("pdfs")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("name", selectedFile.name);
   
-        console.log("📄 PDF metadata returned:", metadata); // 🔍 Debug log
-        setCurrentPdfId(metadata.id);
+      if (checkError) throw checkError;
   
-        await generateQuizFromPDF(selectedFile);
-        setView("quiz");
-      } catch (error) {
-        console.error("❌ Error uploading PDF or saving metadata:", error);
-      } finally {
-        setLoading(false);
+      if (matches.length > 0) {
+        // ✅ Show DaisyUI toast
+        const toastContainer = document.querySelector(".toast");
+        const toast = document.createElement("div");
+        toast.className = "alert alert-warning text-sm";
+        toast.innerHTML = `<span>📚 This book already exists. Redirecting...</span>`;
+        toastContainer.appendChild(toast);
+  
+        setTimeout(() => {
+          toast.remove();
+        }, 3000);
+  
+        setView("dashboard");
+        return;
       }
+  
+      // 📤 Upload file
+      const fileUrl = await uploadPDF(selectedFile);
+  
+      // 💾 Save metadata
+      const metadata = await savePDFMetadata({
+        name: selectedFile.name,
+        file_url: fileUrl,
+        user_id: user.id,
+      });
+  
+      setCurrentPdfId(metadata.id);
+  
+      await generateQuizFromPDF(selectedFile);
+      setView("quiz");
+  
+    } catch (error) {
+      console.error("❌ Error uploading PDF or checking duplicates:", error);
+  
+      // ❌ Error toast
+      const toastContainer = document.querySelector(".toast");
+      const toast = document.createElement("div");
+      toast.className = "alert alert-error text-sm";
+      toast.innerHTML = `<span>Something went wrong while uploading.</span>`;
+      toastContainer.appendChild(toast);
+  
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    } finally {
+      setLoading(false);
     }
   };
+  
+  
+  
   
   
   
@@ -227,6 +270,9 @@ function App() {
           </div>
         </AnimatePresence>
       )}
+        <div className="toast toast-top toast-end z-50 fixed">
+        {/* We will dynamically inject toasts */}
+        </div>
     </div>
   );
 }
