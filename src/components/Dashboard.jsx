@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabase";
 import { motion } from "framer-motion";
 import { Book, Repeat, FilePlus } from "lucide-react";
-
+import StatCard from "./StatCard";
+import BookCard from "./BookCard";
+import QuizCard from "./QuizCard";  
 export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF }) {
   const [pdfs, setPdfs] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
@@ -58,44 +60,23 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF }) {
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-        <div className="stat bg-base-200 p-4 rounded shadow">
-          <div className="stat-title">Total Books</div>
-          <div className="stat-value">{pdfs.length}</div>
-        </div>
-        <div className="stat bg-base-200 p-4 rounded shadow">
-          <div className="stat-title">Total Quizzes</div>
-          <div className="stat-value">{quizzes.length}</div>
-        </div>
-        <div className="stat bg-base-200 p-4 rounded shadow">
-          <div className="stat-title">Average Score</div>
-          <div className="stat-value">{avgScore}/10</div>
-        </div>
+      <div className="grid grid-cols-3 gap-4">
+      <StatCard title="Total Books" value={pdfs.length} />
+      <StatCard title="Total Quizzes" value={quizzes.length} />
+      <StatCard title="Average Score" value={`${avgScore}/10`} />
       </div>
 
       {/* Your Books Section */}
       <div className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4">Your Books</h2>
+        <h2 className="text-2xl font-semibold mt-8 mb-4">Your Books</h2>
         <div className="flex gap-4 overflow-x-auto pb-2">
           {pdfs.map((pdf) => (
-            <div key={pdf.id} className="card w-60 bg-base-100 shadow-md">
-              <figure className="h-40 bg-base-200 flex items-center justify-center">
-                <Book size={48} />
-              </figure>
-              <div className="card-body">
-                <h3 className="card-title text-lg font-bold">{pdf.name}</h3>
-                <p className="text-sm text-gray-500">Quizzes played: {quizzes.filter(q => q.pdf_name === pdf.name).length}</p>
-                <div className="card-actions justify-between mt-2">
-                  <a href={pdf.file_url} target="_blank" className="btn btn-sm btn-outline">Read</a>
-                  <button
-                    className="btn btn-sm btn-accent"
-                    onClick={() => onGenerateFromPDF(pdf.file_url)}
-                  >
-                    Play Quiz
-                  </button>
-                </div>
-              </div>
-            </div>
+            <BookCard
+              key={pdf.id}
+              pdf={pdf}
+              quizCount={quizzes.filter(q => q.pdf_name === pdf.name).length}
+              onPlay={() => onGenerateFromPDF(pdf.file_url)}
+            />
           ))}
           {/* Add Book Card */}
           <div className="card w-60 bg-base-100 border-dashed border-2 flex flex-col items-center justify-center cursor-pointer" onClick={onStartNewQuiz}>
@@ -113,24 +94,11 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF }) {
         {quizzes.length === 0 ? (
           <p className="text-gray-500">You haven't taken any quizzes yet.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {quizzes.map((quiz) => (
-              <motion.div
-                key={quiz.id}
-                className="card bg-base-100 shadow p-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <h3 className="text-lg font-semibold mb-1">{quiz.pdf_name}</h3>
-                <p className="text-sm text-gray-500">Score: {quiz.score}/10</p>
-                <p className="text-sm text-gray-400">{new Date(quiz.date_taken).toLocaleString()}</p>
-                <button className="btn btn-sm btn-secondary mt-3">
-                  <Repeat className="w-4 h-4 mr-2" /> Retake Quiz
-                </button>
-              </motion.div>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {quizzes.map((quiz) => (
+        <QuizCard key={quiz.id} quiz={quiz} />
+        ))}
+        </div>
         )}
       </div>
     </div>
