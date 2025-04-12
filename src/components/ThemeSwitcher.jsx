@@ -8,10 +8,11 @@ const themes = [
   "corporate",
   "fantasy",
   "bumblebee",
+  "corporateecho"
 ];
 
 const ThemeSwitcher = () => {
-  const [theme, setTheme] = useState(localStorage.getItem("theme") || "cupcake");
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "corporateecho");
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -19,19 +20,17 @@ const ThemeSwitcher = () => {
   }, [theme]);
 
   return (
-    <div className="fixed top-4 right-4">
-      <select
-        className="select select-bordered"
-        value={theme}
-        onChange={(e) => setTheme(e.target.value)}
-      >
-        {themes.map((t) => (
-          <option key={t} value={t}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </option>
-        ))}
-      </select>
-    </div>
+    <select
+      className="select select-sm select-bordered"
+      value={theme}
+      onChange={(e) => setTheme(e.target.value)}
+    >
+      {themes.map((t) => (
+        <option key={t} value={t}>
+          {t.charAt(0).toUpperCase() + t.slice(1)}
+        </option>
+      ))}
+    </select>
   );
 };
 

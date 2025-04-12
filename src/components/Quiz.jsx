@@ -7,6 +7,11 @@ const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [timeLeft, setTimeLeft] = useState(60); // 60-second timer per question
 
+  // Log pdfId when component mounts or pdfId changes
+  useEffect(() => {
+    console.log("📚 Quiz mounted/updated with pdfId:", pdfId);
+  }, [pdfId]);
+
   const currentQuestion = quizData.questions[currentQuestionIndex];
 
   useEffect(() => {
@@ -27,15 +32,21 @@ const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
   };
 
   const handleNextQuestion = () => {
-    if (selectedAnswer === currentQuestion.correctAnswer) {
-      setScore(score + 1);
+    if (!pdfId) {
+      console.error("⚠️ Quiz component: No pdfId available for quiz completion");
     }
-    setSelectedAnswer(null);
 
+    // Calculate current question's score
+    const currentQuestionScore = selectedAnswer === currentQuestion.correctAnswer ? 1 : 0;
+    const newScore = score + currentQuestionScore;
+    
     if (currentQuestionIndex < quizData.questions.length - 1) {
+      setScore(newScore);
+      setSelectedAnswer(null);
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      onQuizComplete(score + (selectedAnswer === currentQuestion.correctAnswer ? 1 : 0), pdfId);
+      console.log("🎯 Quiz completed. Submitting score:", newScore, "for pdfId:", pdfId);
+      onQuizComplete(newScore, pdfId);
     }
   };
 
