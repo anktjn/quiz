@@ -12,6 +12,7 @@ import Login from "./components/Login";
 import { supabase } from "./utils/supabase";
 import Dashboard from "./components/Dashboard";
 import UploadModal from "./components/UploadModal";
+import { fetchBookCover } from "./utils/bookCovers";
 
 function App() { 
   const [currentPdfId, setCurrentPdfId] = useState(null);
@@ -127,12 +128,7 @@ function App() {
         .eq('name', selectedFile.name);
 
       if (existingFiles?.length > 0) {
-        const toast = document.createElement('div');
-        toast.className = 'alert alert-warning';
-        toast.innerHTML = '<span>A file with this name already exists</span>';
-        document.querySelector('.toast').appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
-        return;
+        throw new Error('A file with this name already exists');
       }
 
       // Upload file to Supabase Storage
@@ -147,7 +143,16 @@ function App() {
         .from('pdfs')
         .getPublicUrl(filePath);
 
-      // Save PDF metadata to database
+      // Try to fetch book cover
+      let coverUrl = null;
+      try {
+        coverUrl = await fetchBookCover(selectedFile.name);
+      } catch (coverError) {
+        console.error('Error fetching cover:', coverError);
+        // If error, leave coverUrl as null to use initials
+      }
+      
+      // Save PDF metadata to database - if no cover found, use null
       const { data: pdfData, error: dbError } = await supabase
         .from('pdfs')
         .insert([
@@ -155,6 +160,7 @@ function App() {
             name: selectedFile.name,
             file_url: publicUrl,
             user_id: user.id,
+            cover_url: coverUrl, // Will be null if fetch failed, triggering initials display
           },
         ])
         .select()
@@ -270,11 +276,11 @@ function App() {
       setLoading(false);
     }
   };
-  
+
   if (!user) return <Login />;
 
   return (
-    <div className="container mx-auto flex flex-col items-center justify-center min-h-screen" data-theme="corporateecho">
+    <div className="container mx-auto flex flex-col items-center justify-center min-h-screen" >
       <RestartApp />
 
       {loading && <Loading />}

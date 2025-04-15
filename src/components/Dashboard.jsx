@@ -12,62 +12,145 @@ const formatPDFName = (name) => {
   return name?.replace(/_/g, ' ').replace('.pdf', '') || 'Untitled';
 };
 
-export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF, onLogout }) {
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const isToday = date.toDateString() === now.toDateString();
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const timeString = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  if (isToday) {
+    return `Today, ${timeString}`;
+  } else if (isYesterday) {
+    return `Yesterday, ${timeString}`;
+  } else {
+    const day = date.getDate();
+    const month = date.toLocaleString('default', { month: 'short' });
+    return `${day} ${month}, ${timeString}`;
+  }
+};
+
+export default function Dashboard({ 
+  user, 
+  onStartNewQuiz, 
+  onGenerateFromPDF, 
+  onLogout
+}) {
   const [pdfs, setPdfs] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingPdfId, setLoadingPdfId] = useState(null);
   const [quizCounts, setQuizCounts] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStates, setLoadingStates] = useState({});
 
   const fetchData = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
+      console.log("Fetching fresh data from database...");
 
-    const { data: pdfData, error: pdfError } = await supabase
-      .from("pdfs")
-      .select("*")
-      .eq("user_id", user.id);
+      // Force cache bypass by adding timestamp
+      const timestamp = new Date().getTime();
+      
+      // Fetch PDFs for current user with cache bypass
+      const { data: pdfData, error: pdfError } = await supabase
+        .from("pdfs")
+        .select("*")
+        .eq("user_id", user.id)
+        .order('uploaded_at', { ascending: false });
 
-    const { data: quizData, error: quizError } = await supabase
-      .from("quizzes")
-      .select("id, pdf_name, score, date_taken, user_id, pdf_id")
-      .eq("user_id", user.id);
-    
-    console.log("📄 Quizzes fetched:", quizData);
+      if (pdfError) {
+        console.error("Error fetching PDFs:", pdfError);
+        throw pdfError;
+      }
 
-    if (pdfError || quizError) {
-      console.error("Error fetching data:", pdfError || quizError);
-    } else {
-      console.log("📚 PDFs:", pdfData);
-      console.log("📝 Quizzes:", quizData);
-      setPdfs(pdfData);
-      setQuizzes(quizData);
+      // Log all PDFs for debugging
+      console.log("All fetched PDFs:", pdfData?.map(pdf => ({
+        id: pdf.id,
+        name: pdf.name
+      })));
+
+      // Fetch quizzes for current user
+      const { data: quizData, error: quizError } = await supabase
+        .from("quizzes")
+        .select("*")
+        .eq("user_id", user.id)
+        .order('date_taken', { ascending: false });
+
+      if (quizError) {
+        console.error("Error fetching quizzes:", quizError);
+        throw quizError;
+      }
+
+      console.log("📚 PDFs fetched:", pdfData?.length || 0);
+      console.log("📝 Quizzes fetched:", quizData?.length || 0);
+
+      // Update state with fresh data
+      console.log("Before updating state - Current PDFs count:", pdfs.length);
+      setPdfs(pdfData || []);
+      setQuizzes(quizData || []);
+      console.log("After updating state - New PDFs count:", pdfData?.length || 0);
+
+      // Calculate quiz counts
+      const counts = {};
+      quizData?.forEach(quiz => {
+        if (quiz.pdf_id) {
+          counts[quiz.pdf_id] = (counts[quiz.pdf_id] || 0) + 1;
+        }
+      });
+      setQuizCounts(counts);
+
+    } catch (error) {
+      console.error("Error in fetchData:", error);
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-error';
+      toast.innerHTML = `<span>Failed to refresh data: ${error.message}</span>`;
+      document.querySelector('.toast').appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  // Function to refresh data after cover update
+  const refreshAfterCoverUpdate = async (pdfId) => {
+    try {
+      // Get the updated PDF with the new cover URL
+      const { data, error } = await supabase
+        .from("pdfs")
+        .select("*")
+        .eq("id", pdfId)
+        .single();
+      
+      if (error) throw error;
+      
+      // Update the PDF in the local state
+      if (data) {
+        setPdfs(prevPdfs => 
+          prevPdfs.map(pdf => 
+            pdf.id === pdfId ? data : pdf
+          )
+        );
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error refreshing after cover update:", error);
+      return false;
+    }
   };
 
   useEffect(() => {
     fetchData();
-    fetchQuizCounts();
   }, [user.id]);
-
-  const fetchQuizCounts = async () => {
-    const { data, error } = await supabase
-      .from("quizzes")
-      .select("pdf_id, count")
-      .eq("user_id", user.id);
-
-    if (error) {
-      console.error("Error fetching quiz counts:", error);
-      return;
-    }
-
-    const counts = {};
-    data.forEach(({ pdf_id, count }) => {
-      counts[pdf_id] = count;
-    });
-    setQuizCounts(counts);
-  };
 
   const handlePlayQuiz = async (pdfUrl, pdfId) => {
     setLoadingPdfId(pdfId);
@@ -85,42 +168,124 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF, onL
 
   const handleDelete = async (pdfId) => {
     try {
-      // First, delete all associated quizzes
-      const { error: quizError } = await supabase
-        .from("quizzes")
-        .delete()
-        .eq("pdf_id", pdfId);
+      console.log("Starting deletion process for PDF ID:", pdfId);
+      setIsLoading(true);
 
-      if (quizError) throw quizError;
-
-      // Get the PDF data to delete from storage
+      // 1. First verify the PDF exists and get file information
       const { data: pdfData, error: fetchError } = await supabase
         .from("pdfs")
         .select("*")
         .eq("id", pdfId)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error("Error fetching PDF:", fetchError);
+        throw new Error(`Failed to fetch PDF: ${fetchError.message}`);
+      }
 
-      // Delete the PDF file from storage
-      const filePath = new URL(pdfData.file_url).pathname.split('/').pop();
-      const { error: storageError } = await supabase.storage
-        .from("pdfs")
-        .remove([filePath]);
+      if (!pdfData) {
+        throw new Error("PDF not found");
+      }
 
-      if (storageError) throw storageError;
-
-      // Finally, delete the PDF record
-      const { error: deleteError } = await supabase
-        .from("pdfs")
-        .delete()
-        .eq("id", pdfId);
-
-      if (deleteError) throw deleteError;
-
-      // Update local state
-      setPdfs(pdfs.filter(pdf => pdf.id !== pdfId));
+      console.log("Found PDF to delete:", pdfData);
       
+      // Extract file name for storage deletion later
+      const fileName = pdfData.file_url.split('/').pop();
+
+      // 2. Delete associated quizzes
+      console.log("Deleting associated quizzes...");
+      const { error: quizError } = await supabase
+        .from("quizzes")
+        .delete()
+        .eq("pdf_id", pdfId);
+
+      if (quizError) {
+        console.error("Error deleting quizzes:", quizError);
+        throw new Error(`Failed to delete quizzes: ${quizError.message}`);
+      }
+      
+      // 3. Delete the PDF record directly with a raw RPC call
+      console.log("Deleting PDF record...");
+      
+      // First attempt - Using RPC call
+      try {
+        const { error: rpcError } = await supabase.rpc('delete_pdf_by_id', { 
+          pdf_id: pdfId,
+          user_id_param: user.id 
+        });
+        
+        if (rpcError) {
+          console.error("RPC delete error:", rpcError);
+          throw rpcError;
+        }
+        
+        console.log("PDF deleted successfully via RPC");
+      } catch (rpcErr) {
+        console.warn("RPC delete failed, falling back to DELETE:", rpcErr);
+        
+        // Second attempt - Using standard delete
+        const { error: deleteError } = await supabase
+          .from("pdfs")
+          .delete()
+          .eq("id", pdfId)
+          .eq("user_id", user.id);
+          
+        if (deleteError) {
+          console.error("Error deleting PDF:", deleteError);
+          throw new Error(`Failed to delete PDF: ${deleteError.message}`);
+        }
+        
+        console.log("PDF deleted via standard delete");
+      }
+      
+      // 4. Verify the deletion
+      const { data: checkData, error: checkError } = await supabase
+        .from("pdfs")
+        .select("id")
+        .eq("id", pdfId)
+        .maybeSingle();
+        
+      if (checkError) {
+        console.warn("Verification check error:", checkError);
+        // Continue despite verification error
+      } else if (checkData) {
+        console.error("PDF still exists after deletion:", checkData);
+        // Continue despite verification failure
+      } else {
+        console.log("Verified PDF deletion - record no longer exists");
+      }
+
+      // 5. Delete from storage
+      console.log("Attempting to delete file from storage:", fileName);
+      try {
+        const { error: storageError } = await supabase.storage
+          .from("pdfs")
+          .remove([fileName]);
+
+        if (storageError) {
+          console.error("Storage delete error:", storageError);
+          // Continue despite storage error
+        } else {
+          console.log("Successfully deleted file from storage");
+        }
+      } catch (storageErr) {
+        console.error("Storage deletion error:", storageErr);
+        // Continue despite errors
+      }
+
+      // 6. Update local state
+      setPdfs(prevPdfs => {
+        const newPdfs = prevPdfs.filter(pdf => pdf.id !== pdfId);
+        console.log("Updated local PDFs state. Remaining count:", newPdfs.length);
+        return newPdfs;
+      });
+
+      setQuizzes(prevQuizzes => {
+        const newQuizzes = prevQuizzes.filter(quiz => quiz.pdf_id !== pdfId);
+        console.log("Updated local quizzes state. Remaining count:", newQuizzes.length);
+        return newQuizzes;
+      });
+
       // Show success message
       const toast = document.createElement('div');
       toast.className = 'alert alert-success';
@@ -128,13 +293,23 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF, onL
       document.querySelector('.toast').appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
 
+      // 7. Force a complete data refresh after a delay
+      setTimeout(() => {
+        console.log("Refreshing data after deletion...");
+        fetchData()
+          .then(() => console.log("Data refreshed from server"))
+          .catch(err => console.error("Error refreshing data:", err));
+      }, 2000);
+
     } catch (error) {
-      console.error("Error deleting PDF:", error);
+      console.error("Error in delete process:", error);
       const toast = document.createElement('div');
       toast.className = 'alert alert-error';
-      toast.innerHTML = '<span>Failed to delete book. Please try again.</span>';
+      toast.innerHTML = `<span>Failed to delete book: ${error.message}</span>`;
       document.querySelector('.toast').appendChild(toast);
       setTimeout(() => toast.remove(), 3000);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -219,6 +394,7 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF, onL
                 onPlay={() => handlePlayQuiz(pdf.file_url, pdf.id)}
                 onDelete={handleDelete}
                 isLoading={loadingPdfId === pdf.id}
+                onCoverUpdated={refreshAfterCoverUpdate}
               />
             ))
           )}
@@ -246,7 +422,7 @@ export default function Dashboard({ user, onStartNewQuiz, onGenerateFromPDF, onL
                   <tr key={quiz.id}>
                     <td>{formatPDFName(quiz.pdf_name)}</td>
                     <td>{quiz.score}/10</td>
-                    <td>{new Date(quiz.date_taken).toLocaleString()}</td>
+                    <td>{formatDate(quiz.date_taken)}</td>
                     <td>
                       <button 
                         className="btn btn-sm btn-secondary"
