@@ -1,14 +1,18 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { bulkUploadPreloadedPDFs } from '../utils/preloadedPDFs';
 import { X, Loader2, Upload, FileText, Check, AlertCircle, Image } from 'lucide-react';
 
 export default function BulkPDFUpload({ onClose, onSuccess }) {
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [processedFileIds, setProcessedFileIds] = useState(new Set());
+  const [currentBatch, setCurrentBatch] = useState([]);
   const [coverFiles, setCoverFiles] = useState({});
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [completed, setCompleted] = useState(false);
+  const [totalUploaded, setTotalUploaded] = useState(0);
+  const [batchSize] = useState(10);
   const fileInputRef = useRef(null);
   const coverInputRef = useRef(null);
 
@@ -45,6 +49,15 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
       author: 'Unknown Author'
     };
   };
+
+  // Prepare the next batch whenever selectedFiles or processedFileIds changes
+  useEffect(() => {
+    if (!uploading && selectedFiles.length > 0) {
+      const unprocessedFiles = selectedFiles.filter(file => !processedFileIds.has(file.id));
+      const nextBatch = unprocessedFiles.slice(0, batchSize);
+      setCurrentBatch(nextBatch);
+    }
+  }, [selectedFiles, processedFileIds, uploading, batchSize]);
 
   const handleFileChange = (event) => {
     const files = Array.from(event.target.files).filter(
@@ -112,18 +125,54 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
 
   const removeFile = (id) => {
     setSelectedFiles(prevFiles => prevFiles.filter(fileData => fileData.id !== id));
+    
+    // If the file was already processed, remove it from processed set
+    if (processedFileIds.has(id)) {
+      const newProcessedIds = new Set(processedFileIds);
+      newProcessedIds.delete(id);
+      setProcessedFileIds(newProcessedIds);
+    }
   };
 
   const handleBulkUpload = async () => {
-    if (selectedFiles.length === 0) return;
+    if (currentBatch.length === 0) {
+      // Check if all files have been processed
+      if (processedFileIds.size >= selectedFiles.length) {
+        // All files have been processed, show completion
+        setCompleted(true);
+        return;
+      }
+      return; // No files to upload in this batch
+    }
     
     setUploading(true);
     setError(null);
-    setProgress({ percent: 0, completed: 0, total: selectedFiles.length, errors: 0 });
+    
+    const totalRemaining = selectedFiles.length - processedFileIds.size;
+    const batchNumber = Math.floor(processedFileIds.size / batchSize) + 1;
+    const totalBatches = Math.ceil(selectedFiles.length / batchSize);
+    
+    setProgress({ 
+      percent: 0, 
+      completed: 0, 
+      total: currentBatch.length,
+      totalUploaded: processedFileIds.size,
+      totalFiles: selectedFiles.length,
+      batchNumber,
+      totalBatches,
+      errors: 0 
+    });
     
     try {
+      // Show batch upload message
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-info';
+      toast.innerHTML = `<span>Uploading batch ${batchNumber} of ${totalBatches} (${currentBatch.length} files)</span>`;
+      document.querySelector('.toast')?.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+      
       // Add cover files to each PDF entry before uploading
-      const filesWithCovers = selectedFiles.map(fileData => {
+      const filesWithCovers = currentBatch.map(fileData => {
         const coverFile = findCoverForPDF(fileData);
         return {
           ...fileData,
@@ -133,44 +182,68 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
       
       // Call the bulk upload function with progress callback
       const result = await bulkUploadPreloadedPDFs(filesWithCovers, (progressData) => {
-        setProgress(progressData);
+        setProgress({
+          ...progressData,
+          totalUploaded: processedFileIds.size + progressData.completed,
+          totalFiles: selectedFiles.length,
+          batchNumber,
+          totalBatches
+        });
       });
       
-      // Show success message
-      const toast = document.createElement('div');
-      toast.className = 'alert alert-success';
-      toast.innerHTML = `<span>Successfully uploaded ${result.successCount} PDFs</span>`;
-      document.querySelector('.toast')?.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      // Mark these files as processed
+      const newProcessedIds = new Set(processedFileIds);
+      currentBatch.forEach(file => newProcessedIds.add(file.id));
+      setProcessedFileIds(newProcessedIds);
+      setTotalUploaded(prev => prev + result.successCount);
+      
+      // Show success message for this batch
+      const successToast = document.createElement('div');
+      successToast.className = 'alert alert-success';
+      successToast.innerHTML = `<span>Successfully uploaded ${result.successCount} PDFs (Batch ${batchNumber}/${totalBatches})</span>`;
+      document.querySelector('.toast')?.appendChild(successToast);
+      setTimeout(() => successToast.remove(), 3000);
       
       if (result.errorCount > 0) {
-        setError(`Failed to upload ${result.errorCount} files. Check console for details.`);
-      } else {
+        setError(`Failed to upload ${result.errorCount} files in this batch. Check console for details.`);
+      }
+      
+      // Check if all files have been processed
+      if (newProcessedIds.size >= selectedFiles.length) {
         setCompleted(true);
-        // Reset form after success
-        setTimeout(() => {
-          if (onSuccess) onSuccess(result.successful);
-        }, 2000);
+        if (onSuccess) {
+          setTimeout(() => {
+            onSuccess(result.successful);
+          }, 2000);
+        }
       }
     } catch (err) {
       console.error('Bulk upload error:', err);
       setError(err.message || 'Failed to upload PDFs');
       
       // Show error message
-      const toast = document.createElement('div');
-      toast.className = 'alert alert-error';
-      toast.innerHTML = `<span>${err.message || 'Failed to upload PDFs'}</span>`;
-      document.querySelector('.toast')?.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      const errorToast = document.createElement('div');
+      errorToast.className = 'alert alert-error';
+      errorToast.innerHTML = `<span>${err.message || 'Failed to upload PDFs'}</span>`;
+      document.querySelector('.toast')?.appendChild(errorToast);
+      setTimeout(() => errorToast.remove(), 3000);
     } finally {
       setUploading(false);
     }
+  };
+
+  // Continue with next batch when current batch finishes
+  const handleContinueUpload = () => {
+    handleBulkUpload();
   };
 
   // Count PDFs with matching covers
   const matchingCoversCount = selectedFiles.filter(fileData => 
     findCoverForPDF(fileData) !== null
   ).length;
+
+  // Calculate remaining files
+  const remainingFiles = selectedFiles.length - processedFileIds.size;
 
   return (
     <div className="modal modal-open">
@@ -210,7 +283,7 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                   <p className="text-xs text-gray-500 mt-1">
                     {selectedFiles.length === 0 
                       ? 'No PDFs selected' 
-                      : `${selectedFiles.length} PDF${selectedFiles.length !== 1 ? 's' : ''} selected`}
+                      : `${selectedFiles.length} PDF${selectedFiles.length !== 1 ? 's' : ''} selected, ${remainingFiles} remaining`}
                   </p>
                 </div>
                 
@@ -250,6 +323,11 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                       <strong>Matched:</strong> {matchingCoversCount} of {selectedFiles.length} PDFs have matching covers.
                     </p>
                   )}
+                  {selectedFiles.length > batchSize && (
+                    <p className="text-sm mt-1">
+                      <strong>Note:</strong> Files will be uploaded in batches of {batchSize}. {processedFileIds.size} of {selectedFiles.length} have been processed.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -260,9 +338,10 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
             <div className="overflow-y-auto max-h-[400px] border border-base-300 rounded-lg p-2 mb-6">
               {selectedFiles.map((fileData) => {
                 const hasCover = findCoverForPDF(fileData) !== null;
+                const isProcessed = processedFileIds.has(fileData.id);
                 
                 return (
-                  <div key={fileData.id} className="p-3 border-b border-base-200 last:border-b-0">
+                  <div key={fileData.id} className={`p-3 border-b border-base-200 last:border-b-0 ${isProcessed ? 'opacity-50' : ''}`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate max-w-md" title={fileData.file.name}>
@@ -274,10 +353,17 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                             Cover matched
                           </span>
                         )}
+                        {isProcessed && (
+                          <span className="badge badge-info gap-1">
+                            <Check size={12} />
+                            Uploaded
+                          </span>
+                        )}
                       </div>
                       <button 
                         onClick={() => removeFile(fileData.id)} 
                         className="btn btn-ghost btn-xs"
+                        disabled={uploading}
                       >
                         <X size={14} />
                       </button>
@@ -294,6 +380,7 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                           onChange={(e) => updateFileMetadata(fileData.id, 'title', e.target.value)}
                           className="input input-bordered input-sm w-full"
                           placeholder="Enter title"
+                          disabled={isProcessed || uploading}
                           required
                         />
                       </div>
@@ -307,6 +394,7 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                           onChange={(e) => updateFileMetadata(fileData.id, 'author', e.target.value)}
                           className="input input-bordered input-sm w-full"
                           placeholder="Enter author"
+                          disabled={isProcessed || uploading}
                           required
                         />
                       </div>
@@ -321,6 +409,7 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                         onChange={(e) => updateFileMetadata(fileData.id, 'description', e.target.value)}
                         className="input input-bordered input-sm w-full"
                         placeholder="Enter description (optional)"
+                        disabled={isProcessed || uploading}
                       />
                     </div>
                   </div>
@@ -334,7 +423,7 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
             <div className="my-8">
               <div className="mb-2 flex justify-between items-center">
                 <span className="text-sm font-medium">
-                  Uploading PDFs ({progress.completed}/{progress.total})
+                  Batch {progress.batchNumber}/{progress.totalBatches}: Uploading PDFs ({progress.completed}/{progress.total})
                 </span>
                 <span className="text-sm">{progress.percent}%</span>
               </div>
@@ -344,6 +433,22 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                   style={{ width: `${progress.percent}%` }}
                 ></div>
               </div>
+              
+              <div className="mt-4 mb-2 flex justify-between items-center">
+                <span className="text-sm font-medium">
+                  Overall Progress: {progress.totalUploaded}/{progress.totalFiles} Files
+                </span>
+                <span className="text-sm">
+                  {Math.round((progress.totalUploaded / progress.totalFiles) * 100)}%
+                </span>
+              </div>
+              <div className="w-full bg-base-300 rounded-full h-4">
+                <div 
+                  className="bg-secondary h-4 rounded-full transition-all duration-300" 
+                  style={{ width: `${Math.round((progress.totalUploaded / progress.totalFiles) * 100)}%` }}
+                ></div>
+              </div>
+              
               {progress.errors > 0 && (
                 <div className="text-error text-sm mt-2">
                   <AlertCircle size={14} className="inline mr-1" />
@@ -365,11 +470,14 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
               <p className="text-gray-500">
                 Your PDFs have been successfully uploaded and are now available in the preloaded library.
               </p>
+              <p className="font-medium mt-2">
+                {totalUploaded} out of {selectedFiles.length} PDFs uploaded successfully.
+              </p>
             </div>
           )}
           
           {/* Error Message */}
-          {error && !uploading && (
+          {error && !uploading && !completed && (
             <div className="alert alert-error mb-4">
               <AlertCircle size={18} />
               <span>{error}</span>
@@ -387,24 +495,32 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
               >
                 Cancel
               </button>
-              <button 
-                type="button" 
-                className="btn btn-primary"
-                onClick={handleBulkUpload}
-                disabled={selectedFiles.length === 0 || uploading}
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 size={16} className="mr-2 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload size={16} className="mr-2" />
-                    Upload {selectedFiles.length} PDFs
-                  </>
-                )}
-              </button>
+              
+              {remainingFiles > 0 && (
+                <button 
+                  type="button" 
+                  className="btn btn-primary"
+                  onClick={handleBulkUpload}
+                  disabled={currentBatch.length === 0 || uploading}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 size={16} className="mr-2 animate-spin" />
+                      Uploading Batch {progress?.batchNumber}/{progress?.totalBatches}...
+                    </>
+                  ) : processedFileIds.size > 0 ? (
+                    <>
+                      <Upload size={16} className="mr-2" />
+                      Upload Next Batch ({Math.min(remainingFiles, batchSize)} of {remainingFiles} PDFs)
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={16} className="mr-2" />
+                      Upload {currentBatch.length} PDFs (Batch 1/{Math.ceil(selectedFiles.length / batchSize)})
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
           
