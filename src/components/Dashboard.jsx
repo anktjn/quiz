@@ -6,6 +6,7 @@ import StatCard from "./StatCard";
 import BookCard from "./BookCard";
 import QuizCard from "./QuizCard";
 import ThemeSwitcher from "./ThemeSwitcher";
+import PreloadedPDFsBrowser from './PreloadedPDFsBrowser';
 
 const formatPDFName = (name) => {
   // Remove .pdf extension and replace underscores with spaces
@@ -51,6 +52,7 @@ export default function Dashboard({
   const [quizCounts, setQuizCounts] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStates, setLoadingStates] = useState({});
+  const [isPreloadedBrowserOpen, setIsPreloadedBrowserOpen] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -372,13 +374,22 @@ export default function Dashboard({
       <div className="mb-10">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-semibold">Your Books</h2>
-          <button 
-            onClick={onStartNewQuiz}
-            className="btn btn-primary btn-sm" 
-          >
-            <Plus size={16} className="mr-2" />
-            Add New Book
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsPreloadedBrowserOpen(true)}
+              className="btn btn-outline btn-sm"
+            >
+              <Book size={16} className="mr-2" />
+              Browse Library
+            </button>
+            <button 
+              onClick={onStartNewQuiz}
+              className="btn btn-primary btn-sm" 
+            >
+              <Plus size={16} className="mr-2" />
+              Add New Book
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 auto-rows-fr">
           {pdfs.length === 0 ? (
@@ -448,6 +459,17 @@ export default function Dashboard({
           </div>
         )}
       </div>
+
+      {isPreloadedBrowserOpen && (
+        <PreloadedPDFsBrowser 
+          user={user}
+          onClose={() => setIsPreloadedBrowserOpen(false)}
+          onPDFAdded={() => {
+            fetchData();
+            setIsPreloadedBrowserOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
