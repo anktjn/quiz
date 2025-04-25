@@ -13,14 +13,31 @@ import { fetchBookCover } from './bookCovers';
  */
 export async function uploadPreloadedPDF(file, metadata, coverFile = null) {
   try {
-    // Upload the file to Supabase Storage
+    // Check if a PDF with the same title and author already exists
+    const { data: existingPdfs, error: checkError } = await supabase
+      .from('preloaded_pdfs')
+      .select('id, title, author')
+      .eq('title', metadata.title)
+      .eq('author', metadata.author);
+      
+    if (checkError) throw checkError;
+    
+    if (existingPdfs && existingPdfs.length > 0) {
+      console.log(`PDF "${metadata.title}" by ${metadata.author} already exists. Skipping upload.`);
+      return existingPdfs[0]; // Return the existing PDF record
+    }
+    
+    // Generate a unique filename with timestamp and random string to avoid duplicates
     const fileExt = file.name.split('.').pop();
-    const fileName = `preloaded_${Date.now()}.${fileExt}`;
+    const randomStr = Math.random().toString(36).substring(2, 10);
+    const fileName = `preloaded_${Date.now()}_${randomStr}.${fileExt}`;
     const filePath = `preloaded/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
-      .upload(filePath, file);
+      .upload(filePath, file, {
+        upsert: true // Use upsert to overwrite if the file exists
+      });
 
     if (uploadError) throw uploadError;
 
@@ -33,14 +50,17 @@ export async function uploadPreloadedPDF(file, metadata, coverFile = null) {
     let coverUrl = null;
     
     if (coverFile) {
-      // If a cover file was provided, upload it
+      // If a cover file was provided, upload it with unique name
       const coverExt = coverFile.name.split('.').pop();
-      const coverName = `cover_${Date.now()}.${coverExt}`;
+      const randomCoverStr = Math.random().toString(36).substring(2, 10);
+      const coverName = `cover_${Date.now()}_${randomCoverStr}.${coverExt}`;
       const coverPath = `covers/${coverName}`;
       
       const { error: coverUploadError } = await supabase.storage
         .from('pdfs')
-        .upload(coverPath, coverFile);
+        .upload(coverPath, coverFile, {
+          upsert: true // Use upsert to overwrite if the file exists
+        });
       
       if (coverUploadError) {
         console.warn('Error uploading cover, will try to fetch one instead:', coverUploadError);
@@ -105,37 +125,36 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
   const errors = [];
   let completed = 0;
 
-  // Process files in batches to avoid overwhelming the server
-  const BATCH_SIZE = 5;
+  // Process files sequentially to avoid race conditions
+  const BATCH_SIZE = 1;
   
   for (let i = 0; i < pdfFiles.length; i += BATCH_SIZE) {
     const batch = pdfFiles.slice(i, i + BATCH_SIZE);
     
-    // Process batch in parallel
-    const batchPromises = batch.map(async ({ file, metadata, coverFile }, batchIndex) => {
-      const index = i + batchIndex;
+    // Process batch in sequence
+    for (const { file, metadata, coverFile } of batch) {
       try {
         const result = await uploadPreloadedPDF(file, metadata, coverFile);
         results.push(result);
-        return { success: true, index };
+        completed++;
       } catch (error) {
+        console.error(`Error uploading ${file.name}:`, error);
         errors.push({ file, metadata, error });
-        return { success: false, index, error };
+        completed++;
       }
-    });
-
-    // Wait for all uploads in this batch to complete
-    const batchResults = await Promise.all(batchPromises);
-    
-    // Update completion status
-    completed += batchResults.length;
-    if (onProgress) {
-      onProgress({
-        percent: Math.round((completed / pdfFiles.length) * 100),
-        completed,
-        total: pdfFiles.length,
-        errors: errors.length
-      });
+      
+      // Update progress
+      if (onProgress) {
+        onProgress({
+          percent: Math.round((completed / pdfFiles.length) * 100),
+          completed,
+          total: pdfFiles.length,
+          errors: errors.length
+        });
+      }
+      
+      // Add a small delay between uploads to prevent rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
