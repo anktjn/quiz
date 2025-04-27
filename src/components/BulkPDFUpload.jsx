@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { bulkUploadPreloadedPDFs } from '../utils/preloadedPDFs';
 import { X, Loader2, Upload, FileText, Check, AlertCircle, Image } from 'lucide-react';
+import PDFTestButton from './PDFTestButton';
 
 export default function BulkPDFUpload({ onClose, onSuccess }) {
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -362,9 +363,16 @@ export default function BulkPDFUpload({ onClose, onSuccess }) {
                 </div>
               </div>
               <h3 className="text-lg font-bold mb-1">Upload Complete!</h3>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 Your PDFs have been successfully uploaded and are now available in the preloaded library.
               </p>
+              <div className="flex justify-center">
+                <PDFTestButton 
+                  pdfId={progress && progress.lastSuccessfulId} 
+                  buttonSize="md" 
+                  buttonStyle="solid" 
+                />
+              </div>
             </div>
           )}
           

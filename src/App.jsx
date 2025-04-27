@@ -7,12 +7,15 @@ import Result from "./components/Results";
 import Loading from "./components/Loading";
 import RestartApp from "./components/RestartApp";
 import { uploadPDF } from "./utils/uploadPDF";
-import { savePDFMetadata } from "./utils/pdfService";
+import { savePDFMetadata, testPDFContentStorage, verifyPDFContentStorage, cleanPDFContent } from "./utils/pdfService";
 import Login from "./components/Login";
 import { supabase } from "./utils/supabase";
 import Dashboard from "./components/Dashboard";
 import UploadModal from "./components/UploadModal";
 import { fetchBookCover } from "./utils/bookCovers";
+import { queuePDFForProcessing } from "./utils/backgroundProcess";
+
+console.log('[APP] Initializing App component');
 
 function App() { 
   const [currentPdfId, setCurrentPdfId] = useState(null);
@@ -21,38 +24,91 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [loadingProgress, setLoadingProgress] = useState("");
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [score, setScore] = useState(0);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pdfs, setPdfs] = useState([]);
 
+  console.log('[APP] App component initialized with default state');
+
+  // Add event listeners for progress updates
   useEffect(() => {
-    console.log("📄 Current PDF ID changed:", currentPdfId);
+    console.log('[APP] 🔄 Setting up event listeners for quiz generation progress');
+    
+    const handleGenerationProgress = (event) => {
+      if (event.detail && event.detail.message) {
+        console.log(`[APP] 📣 Received progress update: ${event.detail.message}`);
+        setLoadingProgress(event.detail.message);
+      }
+    };
+
+    window.addEventListener('quiz-generation-progress', handleGenerationProgress);
+    
+    return () => {
+      console.log('[APP] 🧹 Cleaning up event listeners');
+      window.removeEventListener('quiz-generation-progress', handleGenerationProgress);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log(`[APP] 📄 Current PDF ID changed to: ${currentPdfId}`);
   }, [currentPdfId]);
 
   useEffect(() => {
+    console.log('[APP] 🔄 Checking for existing user session');
+    
     const getSession = async () => {
       const { data } = await supabase.auth.getSession();
-      setUser(data?.session?.user || null);
+      const userFromSession = data?.session?.user || null;
+      console.log(`[APP] 👤 User session found: ${userFromSession ? 'Yes' : 'No'}`);
+      setUser(userFromSession);
     };
     getSession();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        console.log(`[APP] 👤 Auth state changed: ${_event}`);
         setUser(session?.user || null);
       }
     );
     return () => {
+      console.log('[APP] 🧹 Cleaning up auth listener');
       listener.subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
     // Set the theme on mount
+    console.log('[APP] 🎨 Setting default theme');
     document.documentElement.setAttribute('data-theme', 'corporateecho');
   }, []);
 
+  useEffect(() => {
+    // Fetch PDFs when user is logged in
+    if (user) {
+      const fetchPDFs = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('pdfs')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('uploaded_at', { ascending: false });
+            
+          if (error) throw error;
+          setPdfs(data || []);
+        } catch (error) {
+          console.error("Error fetching PDFs:", error);
+        }
+      };
+      
+      fetchPDFs();
+    }
+  }, [user]);
+
   const handleLogout = async () => {
+    console.log('[APP] 🔄 User logout requested');
     await supabase.auth.signOut();
     setUser(null);
     setView("dashboard");
@@ -60,28 +116,140 @@ function App() {
     setQuiz(null);
     setScore(0);
     setQuizCompleted(false);
+    console.log('[APP] ✅ User logged out successfully');
   };
 
-  const generateQuizFromPDF = async (file) => {
+  const generateQuizFromPDF = async (file, pdfId = null, forceRefresh = false) => {
+    console.log(`[APP] 🔄 generateQuizFromPDF - File: ${file.name}, Size: ${(file.size / 1024).toFixed(2)} KB, Force refresh: ${forceRefresh}`);
+    
     if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      console.error('[APP] ❌ Missing OpenAI API key');
       const toast = document.createElement('div');
       toast.className = 'alert alert-error';
       toast.innerHTML = '<span>OpenAI API key is not configured. Please check your environment variables.</span>';
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 5000);
+      const toastContainer = document.querySelector('.toast');
+      if (toastContainer) {
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      }
       return null;
     }
 
     setLoading(true);
+    setLoadingMessage("Processing PDF...");
+    setLoadingProgress("");
+    console.log('[APP] 🔄 Started PDF processing, UI updated to loading state');
+    
     try {
+      console.log(`[APP] 🔄 Current PDF ID: ${currentPdfId} or ${pdfId}`);
+      // Check if we need to verify content first
+      if ((currentPdfId || pdfId) && !forceRefresh) {
+        console.log(`[APP] 🔍 Verifying content before quiz generation for PDF ID: ${currentPdfId}`);
+        const contentVerification = await verifyPDFContentStorage(currentPdfId || pdfId);
+        console.log(`[APP] 🔍 Content verification result:`, contentVerification);
+        
+        // If content is insufficient or test data, force refresh
+        if (!contentVerification || 
+            !contentVerification.success || 
+            contentVerification.details?.content_length < 500) {
+          console.log(`[APP] ⚠️ Content verification failed or insufficient content, forcing refresh`);
+          forceRefresh = true;
+        }
+      }
+      
+      // Define a helper function to dispatch progress events
+      const updateProgress = (message) => {
+        console.log(`[APP] 📣 Updating progress: ${message}`);
+        const progressEvent = new CustomEvent('quiz-generation-progress', {
+          detail: { message }
+        });
+        window.dispatchEvent(progressEvent);
+      };
+      
+      setLoadingMessage("Extracting text from PDF...");
+      console.log('[APP] 🔄 Starting text extraction from PDF');
+      const startExtractTime = performance.now();
       const pdfText = await extractTextFromPDF(file);
+      const endExtractTime = performance.now();
+      console.log(`[APP] ⏱️ Text extraction took ${(endExtractTime - startExtractTime).toFixed(2)}ms`);
+      console.log(`[APP] 📄 Extracted text length: ${pdfText?.length || 0} characters`);
+      
       if (!pdfText || pdfText.trim().length === 0) {
+        console.error('[APP] ❌ Failed to extract text from PDF');
         throw new Error('Could not extract text from PDF. Please make sure the PDF contains readable text.');
       }
+      
+      console.log(`[APP] ✅ Text extracted successfully - Length: ${pdfText.length} characters`);
 
-      const quizQuestions = await generateQuizQuestions(pdfText);
-      if (!quizQuestions || quizQuestions.length === 0) {
+      setLoadingMessage("Generating quiz questions...");
+      updateProgress("This might take longer for large documents...");
+      console.log('[APP] 🔄 Starting quiz generation');
+      
+      // Add event listeners to track progress in the OpenAI service
+      const handleChunkProcessing = (e) => {
+        console.log(`[APP] 📣 Chunk processing event: ${e.detail.current}/${e.detail.total}${e.detail.level ? ' (level: ' + e.detail.level + ')' : ''}`);
+        updateProgress(`Processing section ${e.detail.current} of ${e.detail.total}`);
+      };
+      
+      window.addEventListener('chunk-processing', handleChunkProcessing);
+      
+      console.log(`[APP] 🔄 Generating quiz with PDF ID: ${currentPdfId}, Force refresh: ${forceRefresh}`);
+      const startQuizTime = performance.now();
+      
+      // Pass the PDF ID for caching if available and forceRefresh parameter
+      const quizQuestions = await generateQuizQuestions(pdfText, currentPdfId || pdfId, forceRefresh);
+      
+      const endQuizTime = performance.now();
+      console.log(`[APP] ⏱️ Quiz generation took ${((endQuizTime - startQuizTime) / 1000).toFixed(2)}s`);
+      console.log(`[APP] 📊 Quiz data structure:`, quizQuestions);
+      
+      // Remove event listener when done
+      window.removeEventListener('chunk-processing', handleChunkProcessing);
+      
+      // Validate the quiz data returned by OpenAI
+      if (!quizQuestions) {
+        console.error('[APP] ❌ Quiz generation failed completely, no data returned');
         throw new Error('Failed to generate quiz questions. Please try again.');
+      }
+      
+      // Check if questions are in the expected format - handle flat array
+      const hasQuestions = (
+        quizQuestions.questions && Array.isArray(quizQuestions.questions) && quizQuestions.questions.length > 0
+      );
+      
+      if (!hasQuestions) {
+        console.error('[APP] ❌ No valid questions in the response:', quizQuestions);
+        throw new Error('Failed to generate valid quiz questions. Please try again.');
+      }
+      
+      // Log success with questions array (now always in the same structure)
+      const questionCount = quizQuestions.questions.length;
+      console.log(`[APP] ✅ Quiz generated successfully - ${questionCount} questions`);
+      console.log(`[APP] 🎯 First question as example:`, quizQuestions.questions[0]);
+      console.log(`[APP] 🔄 Current PDF ID after quiz generation: ${currentPdfId}`);
+      // After quiz generation is complete, verify content storage
+      if (currentPdfId || pdfId) {
+        console.log(`[APP] 🔍 Automatically verifying content storage for PDF ID: ${currentPdfId || pdfId}`);
+        try {
+          const verification = await verifyPDFContentStorage(currentPdfId || pdfId);
+          
+          if (!verification || !verification.success) {
+            console.warn("[APP] ⚠️ Content verification failed after quiz generation");
+            const toast = document.createElement('div');
+            toast.className = 'alert alert-warning';
+            toast.innerHTML = '<span>Quiz generated, but content storage verification failed. Database may not have saved the PDF content.</span>';
+            const toastContainer = document.querySelector('.toast');
+            if (toastContainer) {
+              toastContainer.appendChild(toast);
+              setTimeout(() => toast.remove(), 5000);
+            }
+          } else {
+            console.log("[APP] ✅ Content storage verified successfully");
+          }
+        } catch (verifyError) {
+          console.error("[APP] ❌ Error verifying content storage:", verifyError);
+          // Don't fail the quiz generation process due to verification error
+        }
       }
 
       setQuiz(quizQuestions);
@@ -89,38 +257,55 @@ function App() {
       setScore(0);
       return quizQuestions;
     } catch (error) {
-      console.error("Error generating quiz:", error);
+      console.error("[APP] ❌ Error generating quiz:", error);
+      console.error("[APP] ❌ Error context - Current PDF ID:", currentPdfId || pdfId);
       
       // Show a user-friendly error message
       const toast = document.createElement('div');
       toast.className = 'alert alert-error';
       toast.innerHTML = `<span>${error.message || 'Failed to generate quiz. Please try again.'}</span>`;
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 5000);
+      const toastContainer = document.querySelector('.toast');
+      if (toastContainer) {
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      }
       
       return null;
     } finally {
+      console.log('[APP] 🧹 Cleaning up after quiz generation attempt');
       setLoading(false);
+      setLoadingMessage("");
+      setLoadingProgress("");
     }
   };
 
   const handleFileUpload = (file) => {
+    console.log(`[APP] 📄 File selected: ${file.name}, size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
     // Just store the selected file without uploading
     setSelectedFile(file);
   };
 
   const handleSubmit = async (shouldGenerateQuiz = false) => {
-    if (!selectedFile) return;
+    console.log(`[APP] 🔄 handleSubmit - shouldGenerateQuiz: ${shouldGenerateQuiz}`);
+    
+    if (!selectedFile) {
+      console.warn('[APP] ⚠️ No file selected for upload');
+      return;
+    }
 
     try {
       setLoading(true);
+      setLoadingMessage("Uploading PDF to storage...");
+      console.log('[APP] 🔄 Starting PDF upload process');
       
       // First upload the file
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
+      console.log(`[APP] 📄 Generated file path for upload: ${filePath}`);
 
       // Check for duplicate file names
+      console.log(`[APP] 🔄 Checking for duplicate file names for user ${user.id}`);
       const { data: existingFiles } = await supabase
         .from('pdfs')
         .select('name')
@@ -128,241 +313,317 @@ function App() {
         .eq('name', selectedFile.name);
 
       if (existingFiles?.length > 0) {
+        console.error(`[APP] ❌ File with name "${selectedFile.name}" already exists`);
         throw new Error('A file with this name already exists');
       }
+      
+      console.log(`[APP] 🔄 No duplicates found, proceeding with upload`);
 
       // Upload file to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('pdfs')
-        .upload(filePath, selectedFile);
+      console.log(`[APP] 🔄 Starting PDF upload process`);
+      const uploadResult = await uploadPDF(selectedFile, filePath);
 
-      if (uploadError) throw uploadError;
-
-      // Get the public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('pdfs')
-        .getPublicUrl(filePath);
-
-      // Try to fetch book cover
-      let coverUrl = null;
-      try {
-        coverUrl = await fetchBookCover(selectedFile.name);
-      } catch (coverError) {
-        console.error('Error fetching cover:', coverError);
-        // If error, leave coverUrl as null to use initials
+      if (!uploadResult || !uploadResult.data) {
+        console.error('[APP] ❌ Upload failed');
+        throw new Error('Failed to upload PDF');
       }
+
+      console.log(`[APP] 🔄 PDF uploaded successfully`);
+
+      // Save metadata to Supabase
+      console.log(`[APP] 🔄 Saving metadata to Supabase`);
+      const metadata = {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type,
+        user_id: user.id,
+        path: uploadResult.data.path,
+        file_url: uploadResult.data.publicUrl,
+        uploaded_at: new Date().toISOString()
+      };
       
-      // Save PDF metadata to database - if no cover found, use null
-      const { data: pdfData, error: dbError } = await supabase
+      const { data: metadataInsertResult } = await supabase
         .from('pdfs')
-        .insert([
-          {
-            name: selectedFile.name,
-            file_url: publicUrl,
-            user_id: user.id,
-            cover_url: coverUrl, // Will be null if fetch failed, triggering initials display
-          },
-        ])
-        .select()
-        .single();
+        .insert([metadata])
+        .returning('*');
 
-      if (dbError) throw dbError;
-
-      // Update the PDFs list
-      setPdfs((prevPdfs) => [...prevPdfs, pdfData]);
-
-      // Show success message
-      const toast = document.createElement('div');
-      toast.className = 'alert alert-success';
-      toast.innerHTML = '<span>PDF uploaded successfully!</span>';
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-
-      // If we should generate a quiz
-      if (shouldGenerateQuiz) {
-        const quiz = await generateQuizFromPDF(selectedFile);
-        if (quiz) {
-          setView('quiz');
-          setCurrentPdfId(pdfData.id);
-        }
-      } else {
-        setIsUploadModalOpen(false);
+      if (!metadataInsertResult || !metadataInsertResult.length) {
+        console.error('[APP] ❌ Failed to save metadata');
+        throw new Error('Failed to save metadata');
       }
+
+      console.log(`[APP] 🔄 Metadata saved successfully`);
+
+      // Update current PDF ID
+      setCurrentPdfId(metadataInsertResult[0].id);
+      setView("quiz");
+      console.log(`[APP] 🔄 Current PDF ID updated to: ${metadataInsertResult[0].id}`);
+
+      // Generate quiz if requested
+      if (shouldGenerateQuiz) {
+        console.log(`[APP] 🔄 Generating quiz for new PDF`);
+        await generateQuizFromPDF(selectedFile);
+      }
+
+      return metadataInsertResult[0].id;
     } catch (error) {
-      console.error('Error:', error);
+      console.error('[APP] ❌ Error uploading PDF:', error);
+      console.error('[APP] ❌ Error context - Current PDF ID:', currentPdfId);
+      
+      // Show a user-friendly error message
       const toast = document.createElement('div');
       toast.className = 'alert alert-error';
       toast.innerHTML = `<span>${error.message || 'Failed to upload PDF. Please try again.'}</span>`;
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      const toastContainer = document.querySelector('.toast');
+      if (toastContainer) {
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      }
+      
+      return null;
     } finally {
       setLoading(false);
-    }
-  };
-  
-  const handleRestartQuiz = async () => {
-    if (selectedFile) {
-      setQuizCompleted(false);
-      await generateQuizFromPDF(selectedFile);
-      // Note: We don't need to reset currentPdfId here since we want to keep it
+      setLoadingMessage("");
     }
   };
 
-  const handleUploadNewPDF = () => {
-    setQuizCompleted(false);
-    setQuiz(null);
-    setSelectedFile(null);
-    setScore(0);
-    setCurrentPdfId(null);
-  };
-
-  const handleQuizComplete = async (finalScore, pdfId) => {
+  const cleanTestContent = async (pdfId) => {
     if (!pdfId) {
-      console.error("⚠️ No currentPdfId set. Cannot save quiz.");
-      return;
+      console.error("[APP] ❌ No PDF ID provided to cleanTestContent");
+      return false;
     }
-  
-    console.log("🎯 Submitting quiz result with pdfId:", pdfId);
-    setScore(finalScore); // Set the score before marking as completed
-  
-    const { error } = await supabase.from("quizzes").insert({
-      user_id: user.id,
-      pdf_id: pdfId,
-      pdf_name: selectedFile.name,
-      score: finalScore,
-      date_taken: new Date(),
-    });
-  
-    if (error) {
-      console.error("❌ Failed to save quiz:", error);
-      const toast = document.createElement('div');
-      toast.className = 'alert alert-error';
-      toast.innerHTML = '<span>Failed to save quiz result. Please try again.</span>';
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-    } else {
-      console.log("✅ Quiz saved to Supabase");
-      setQuizCompleted(true);
-    }
-  };
-
-  const handlePlayQuiz = async (pdfUrl, pdfId) => {
-    setLoading(true);
+    
     try {
-      const response = await fetch(pdfUrl);
-      if (!response.ok) {
-        throw new Error('Failed to fetch PDF file');
-      }
-
-      const blob = await response.blob();
-      const file = new File([blob], "quiz-pdf.pdf", { type: "application/pdf" });
-      setSelectedFile(file);
-      setCurrentPdfId(pdfId);
-
-      const quiz = await generateQuizFromPDF(file);
-      if (quiz) {
-        setView("quiz");
+      console.log(`[APP] 🧹 Cleaning test/insufficient content for PDF ID: ${pdfId}`);
+      const cleanResult = await cleanPDFContent(pdfId);
+      
+      if (cleanResult.success) {
+        if (cleanResult.cleaned) {
+          console.log(`[APP] ✅ Successfully cleaned test content for PDF ID: ${pdfId}`);
+          const toast = document.createElement('div');
+          toast.className = 'alert alert-success';
+          toast.innerHTML = `<span>✅ Content cleaned for fresh processing</span>`;
+          const toastContainer = document.querySelector('.toast');
+          if (toastContainer) {
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+          }
+        } else {
+          console.log(`[APP] ℹ️ No cleaning needed for PDF ID: ${pdfId}`);
+        }
+        return true;
       } else {
-        setView("dashboard");
+        console.error(`[APP] ❌ Failed to clean content: ${cleanResult.error}`);
+        return false;
       }
     } catch (error) {
-      console.error("Error playing quiz:", error);
-      const toast = document.createElement('div');
-      toast.className = 'alert alert-error';
-      toast.innerHTML = `<span>${error.message || 'Failed to start quiz. Please try again.'}</span>`;
-      document.querySelector('.toast').appendChild(toast);
-      setTimeout(() => toast.remove(), 5000);
-    } finally {
-      setLoading(false);
+      console.error(`[APP] ❌ Error cleaning content: ${error.message}`);
+      return false;
     }
   };
 
-  if (!user) return <Login />;
+  const handleRestartQuiz = async () => {
+    if (selectedFile) {
+      try {
+        setQuizCompleted(false);
+        setLoading(true);
+        setLoadingMessage("Restarting quiz...");
+        
+        // First, if we have a current PDF ID, clean any test/insufficient content
+        if (currentPdfId) {
+          console.log(`[APP] 🔄 Attempting to clean test content before restart`);
+          await cleanTestContent(currentPdfId);
+          
+          // Then verify if we have proper content stored
+          const verification = await verifyPDFContentStorage(currentPdfId);
+          
+          // If content is insufficient (test data or too short), force a refresh
+          const forceRefresh = !verification || 
+                              !verification.success || 
+                              verification.details?.content_length < 500;
+          
+          console.log(`[APP] 🔄 Restarting quiz with${forceRefresh ? ' forced' : ''} refresh`);
+          
+          // Generate quiz with forced refresh if needed
+          await generateQuizFromPDF(selectedFile, forceRefresh);
+        } else {
+          // No PDF ID, always force a fresh generation
+          console.log(`[APP] 🔄 Restarting quiz with fresh generation`);
+          await generateQuizFromPDF(selectedFile, true);
+        }
+      } catch (error) {
+        console.error("[APP] ❌ Error restarting quiz:", error);
+        const toast = document.createElement('div');
+        toast.className = 'alert alert-error';
+        toast.innerHTML = `<span>${error.message || 'Failed to restart quiz. Please try again.'}</span>`;
+        const toastContainer = document.querySelector('.toast');
+        if (toastContainer) {
+          toastContainer.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
+        }
+      } finally {
+        setLoading(false);
+        setLoadingMessage("");
+      }
+    }
+  };
+
+  const runDatabaseTest = async () => {
+    if (!currentPdfId) {
+      console.error("[APP] ❌ No PDF ID available for database test");
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-error';
+      toast.innerHTML = '<span>No PDF ID available for database test. Upload a PDF first.</span>';
+      const toastContainer = document.querySelector('.toast');
+      if (toastContainer) {
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      }
+      return;
+    }
+
+    try {
+      console.log("[APP] 🔄 Running database test with PDF ID:", currentPdfId);
+      const result = await testPDFContentStorage(currentPdfId);
+      
+      if (result.success) {
+        console.log("[APP] ✅ Database test successful:", result);
+        const toast = document.createElement('div');
+        toast.className = 'alert alert-success';
+        toast.innerHTML = `<span>Database test successful! Content ID: ${result.contentId}</span>`;
+        const toastContainer = document.querySelector('.toast');
+        if (toastContainer) {
+          toastContainer.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
+        }
+      } else {
+        console.error("[APP] ❌ Database test failed:", result.error);
+        const toast = document.createElement('div');
+        toast.className = 'alert alert-error';
+        toast.innerHTML = `<span>Database test failed: ${result.error}</span>`;
+        const toastContainer = document.querySelector('.toast');
+        if (toastContainer) {
+          toastContainer.appendChild(toast);
+          setTimeout(() => toast.remove(), 5000);
+        }
+      }
+    } catch (error) {
+      console.error("[APP] ❌ Error running database test:", error);
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-error';
+      toast.innerHTML = `<span>Error running database test: ${error.message}</span>`;
+      const toastContainer = document.querySelector('.toast');
+      if (toastContainer) {
+        toastContainer.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+      }
+    }
+  };
 
   return (
-    <div className="container mx-auto flex flex-col items-center justify-center min-h-screen" >
-      <RestartApp />
+    <div className="App">
+      {/* Toast container for notifications */}
+      <div className="toast toast-end"></div>
 
-      {loading && <Loading />}
-
-      {!loading && view === "dashboard" && (
-        <Dashboard 
-          user={user} 
-          onStartNewQuiz={() => setIsUploadModalOpen(true)} 
-          onGenerateFromPDF={async (pdfUrl, pdfId) => {
-            setLoading(true);
-            try {
-              const response = await fetch(pdfUrl);
-              const blob = await response.blob();
-              const file = new File([blob], "from-dashboard.pdf", { type: blob.type });
-              setSelectedFile(file);
-              setCurrentPdfId(pdfId);
-              await generateQuizFromPDF(file);
-              setView("quiz");
-            } catch (error) {
-              console.error("Error generating quiz:", error);
-            } finally {
-              setLoading(false);
-            }
-          }}
-          onLogout={handleLogout}
-        />
-      )}
-
-      {!loading && view === "quiz" && (
-        <AnimatePresence mode="wait">
-          <div className="relative">
-            {quiz && !quizCompleted && (
-              <motion.div
-                initial={{ x: 100, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -100, opacity: 0 }}
-                transition={{ duration: 0.4 }}
-              >
+      {/* Main application content */}
+      {loading ? (
+        <Loading message={loadingMessage} progress={loadingProgress} />
+      ) : (
+        <>
+          {!user ? (
+            <Login />
+          ) : (
+            <>
+              {view === "dashboard" && (
+                <Dashboard 
+                  user={user}
+                  onStartNewQuiz={() => {
+                    setIsUploadModalOpen(true);
+                  }}
+                  onGenerateFromPDF={async (pdfUrl, pdfId, forceRefresh = false) => {
+                    setCurrentPdfId(pdfId);
+                    console.log(`[APP] 🔄 Setting current PDF ID to: ${pdfId}`);
+                    console.log(`[APP] 🔄 Setting current PDF Url to: ${pdfUrl}`);
+                    try {
+                      const response = await fetch(pdfUrl);
+                      const blob = await response.blob();
+                      const file = new File([blob], "dashboard-file.pdf", { type: blob.type });
+                      setSelectedFile(file);
+                      await generateQuizFromPDF(file, pdfId, forceRefresh);
+                      setView("quiz");
+                    } catch (error) {
+                      console.error("Error generating quiz from PDF:", error);
+                    }
+                  }}
+                  onLogout={handleLogout}
+                />
+              )}
+              {view === "quiz" && quiz && (
                 <Quiz 
                   quizData={quiz} 
-                  onQuizComplete={handleQuizComplete}
                   pdfId={currentPdfId}
-                  key={currentPdfId}
+                  onQuizComplete={(score, pdfId) => {
+                    console.log(`Quiz completed with score ${score} for PDF ${pdfId}`);
+                    setScore(score);
+                    setQuizCompleted(true);
+                    setView("result");
+                  }}
                 />
-              </motion.div>
-            )}
-            {quizCompleted && (
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.5 }}
-              >
+              )}
+              {view === "result" && quizCompleted && (
                 <Result 
                   score={score} 
-                  onRestart={handleRestartQuiz} 
+                  onRestart={handleRestartQuiz}
                   onUploadNew={() => {
-                    handleUploadNewPDF();
+                    setView("dashboard");
                     setIsUploadModalOpen(true);
-                  }} 
+                  }}
                 />
-                <div className="flex justify-center mt-6">
-                  <button className="btn btn-neutral" onClick={() => setView("dashboard")}>Back to Dashboard</button>
-                </div>
-              </motion.div>
-            )}
-          </div>
-        </AnimatePresence>
+              )}
+              {isUploadModalOpen && (
+                <UploadModal 
+                  isOpen={isUploadModalOpen}
+                  onClose={() => setIsUploadModalOpen(false)}
+                  onFileUpload={handleFileUpload}
+                  onSubmit={handleSubmit}
+                  selectedFile={selectedFile}
+                  isLoading={loading}
+                />
+              )}
+            </>
+          )}
+        </>
       )}
 
-      <UploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onFileUpload={handleFileUpload}
-        selectedFile={selectedFile}
-        onSubmit={handleSubmit}
-        isLoading={loading}
-      />
+      {/* Restart App button */}
+      <RestartApp />
 
-      <div className="toast toast-top toast-end z-50 fixed">
-        {/* We will dynamically inject toasts */}
-      </div>
+      {/* Troubleshooting buttons during development */}
+      {import.meta.env.DEV && (
+        <div className="mt-4 text-center flex gap-2 justify-center">
+          <button 
+            className="btn btn-xs btn-warning" 
+            onClick={runDatabaseTest}
+            title="Test database operations"
+          >
+            Test DB
+          </button>
+          <button 
+            className="btn btn-xs btn-info" 
+            onClick={() => verifyPDFContentStorage(currentPdfId)}
+            title="Verify content storage"
+          >
+            Verify Storage
+          </button>
+          <button 
+            className="btn btn-xs btn-error" 
+            onClick={() => cleanTestContent(currentPdfId)}
+            title="Clean test/insufficient content"
+          >
+            Clean Content
+          </button>
+        </div>
+      )}
     </div>
   );
 }

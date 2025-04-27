@@ -7,15 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proxy": "node api-proxy.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
     "@tailwindcss/typography": "^0.5.16",
     "axios": "^1.6.7",
     "clsx": "^2.1.1",
+    "cors": "^2.8.5",
     "daisyui": "^4.7.3",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "framer-motion": "^12.6.0",
+    "http-proxy-middleware": "^2.0.6",
     "lucide-react": "^0.487.0",
     "openai": "^4.28.4",
     "pdf-lib": "^1.17.1",

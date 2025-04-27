@@ -7,6 +7,7 @@ import BookCard from "./BookCard";
 import QuizCard from "./QuizCard";
 import ThemeSwitcher from "./ThemeSwitcher";
 import PreloadedPDFsBrowser from './PreloadedPDFsBrowser';
+import { hasValidQuizTemplate } from "../utils/quizTemplateService";
 
 const formatPDFName = (name) => {
   // Remove .pdf extension and replace underscores with spaces
@@ -157,12 +158,32 @@ export default function Dashboard({
   const handlePlayQuiz = async (pdfUrl, pdfId) => {
     setLoadingPdfId(pdfId);
     try {
+      // Check if the quiz template is valid
+      const isTemplateValid = await hasValidQuizTemplate(pdfId);
+      
+      // If template is expired, show a refresh option
+      if (!isTemplateValid) {
+        const toast = document.createElement('div');
+        toast.className = 'alert alert-warning';
+        toast.innerHTML = '<span>Quiz template is expired or not found. Generating new questions...</span>';
+        document.querySelector('.toast').appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      }
+      
       const response = await fetch(pdfUrl);
       const blob = await response.blob();
       const file = new File([blob], "from-dashboard.pdf", { type: blob.type });
-      await onGenerateFromPDF(pdfUrl, pdfId);
+      console.log(`[DASHBOARD] 📄 pdfId for file created: ${pdfId}`);
+      
+      // Pass forceRefresh=true if template is invalid
+      await onGenerateFromPDF(pdfUrl, pdfId, !isTemplateValid);
     } catch (error) {
       console.error("Error generating quiz:", error);
+      const toast = document.createElement('div');
+      toast.className = 'alert alert-error';
+      toast.innerHTML = `<span>Error: ${error.message}</span>`;
+      document.querySelector('.toast').appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
     } finally {
       setLoadingPdfId(null);
     }
@@ -429,31 +450,37 @@ export default function Dashboard({
                 </tr>
               </thead>
               <tbody>
-                {quizzes.map((quiz) => (
-                  <tr key={quiz.id}>
-                    <td>{formatPDFName(quiz.pdf_name)}</td>
-                    <td>{quiz.score}/10</td>
-                    <td>{formatDate(quiz.date_taken)}</td>
-                    <td>
-                      <button 
-                        className="btn btn-sm btn-secondary"
-                        onClick={async () => {
-                          const { data: pdfData } = await supabase
-                            .from('pdfs')
-                            .select('file_url')
-                            .eq('id', quiz.pdf_id)
-                            .single();
-                            
-                          if (pdfData) {
-                            handlePlayQuiz(pdfData.file_url, quiz.pdf_id);
-                          }
-                        }}
-                      >
-                        <Repeat className="w-4 h-4 mr-2" /> Retake
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {quizzes.map((quiz) => {
+                  // Find matching PDF to get proper name
+                  const matchingPdf = pdfs.find(pdf => pdf.id === quiz.pdf_id);
+                  const displayName = matchingPdf ? formatPDFName(matchingPdf.name) : formatPDFName(quiz.pdf_name);
+                  
+                  return (
+                    <tr key={quiz.id}>
+                      <td>{displayName}</td>
+                      <td>{quiz.score}/10</td>
+                      <td>{formatDate(quiz.date_taken)}</td>
+                      <td>
+                        <button 
+                          className="btn btn-sm btn-secondary"
+                          onClick={async () => {
+                            const { data: pdfData } = await supabase
+                              .from('pdfs')
+                              .select('file_url')
+                              .eq('id', quiz.pdf_id)
+                              .single();
+                              
+                            if (pdfData) {
+                              handlePlayQuiz(pdfData.file_url, quiz.pdf_id);
+                            }
+                          }}
+                        >
+                          <Repeat className="w-4 h-4 mr-2" /> Retake
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

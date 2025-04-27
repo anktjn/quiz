@@ -104,6 +104,7 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
   const results = [];
   const errors = [];
   let completed = 0;
+  let lastSuccessfulId = null;
 
   // Process files in batches to avoid overwhelming the server
   const BATCH_SIZE = 5;
@@ -117,6 +118,7 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
       try {
         const result = await uploadPreloadedPDF(file, metadata, coverFile);
         results.push(result);
+        lastSuccessfulId = result.id;
         return { success: true, index };
       } catch (error) {
         errors.push({ file, metadata, error });
@@ -134,7 +136,8 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
         percent: Math.round((completed / pdfFiles.length) * 100),
         completed,
         total: pdfFiles.length,
-        errors: errors.length
+        errors: errors.length,
+        lastSuccessfulId
       });
     }
   }
@@ -148,7 +151,8 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
     failed: errors,
     totalCount: pdfFiles.length,
     successCount: results.length,
-    errorCount: errors.length
+    errorCount: errors.length,
+    lastSuccessfulId
   };
 }
 

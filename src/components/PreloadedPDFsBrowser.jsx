@@ -4,6 +4,7 @@ import { Book, Plus, Loader2, Search, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PreloadedPDFUpload from './PreloadedPDFUpload';
 import BulkPDFUpload from './BulkPDFUpload';
+import PDFTestButton from './PDFTestButton';
 
 export default function PreloadedPDFsBrowser({ user, onPDFAdded, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -211,6 +212,7 @@ export default function PreloadedPDFsBrowser({ user, onPDFAdded, onClose }) {
                         </>
                       )}
                     </button>
+                    <PDFTestButton pdfId={pdf.id} />
                   </div>
                 </div>
               </motion.div>
