@@ -170,9 +170,18 @@ export default function Dashboard({
         setTimeout(() => toast.remove(), 3000);
       }
       
+      // Get the PDF name from the pdfs table
+      const { data: pdfData } = await supabase
+        .from('pdfs')
+        .select('name')
+        .eq('id', pdfId)
+        .single();
+        
+      const pdfName = pdfData?.name || 'unknown.pdf';
+      
       const response = await fetch(pdfUrl);
       const blob = await response.blob();
-      const file = new File([blob], "from-dashboard.pdf", { type: blob.type });
+      const file = new File([blob], pdfName, { type: blob.type });
       console.log(`[DASHBOARD] 📄 pdfId for file created: ${pdfId}`);
       
       // Pass forceRefresh=true if template is invalid

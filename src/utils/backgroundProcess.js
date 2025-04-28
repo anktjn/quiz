@@ -109,7 +109,7 @@ async function processNextPDF() {
     console.log(`[BACKGROUND] ✅ processPDFContent completed for PDF ${pdfId}`);
     
     console.log(`[BACKGROUND] 🔄 Calling generateQuizQuestions for PDF ${pdfId}`);
-    await generateQuizQuestions(pdfText, pdfId, true, 30); // Generate 30 questions
+    await generateQuizQuestions(pdfText, pdfId, true, 50); // Generate 50 questions for the template
     console.log(`[BACKGROUND] ✅ generateQuizQuestions completed for PDF ${pdfId}`);
     
     const endProcessTime = performance.now();

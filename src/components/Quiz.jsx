@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
+import { resetQuizQuestionHistory } from "../utils/quizTemplateService";
 
 const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -11,6 +12,18 @@ const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
   useEffect(() => {
     console.log("📚 Quiz mounted/updated with pdfId:", pdfId);
     console.log("📚 Quiz data structure:", quizData);
+    console.log("📚 Selected indices for this quiz:", JSON.stringify(quizData.selectedIndices || []));
+    
+    // Also log template indices if they exist
+    if (quizData.metadata && quizData.metadata.templateSelectedIndices) {
+      console.log("📚 Original template indices:", JSON.stringify(quizData.metadata.templateSelectedIndices));
+    }
+    
+    // Reset state when quiz data changes
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setSelectedAnswer(null);
+    setTimeLeft(60);
   }, [pdfId, quizData]);
 
   // Get questions array from quiz data (now always in a consistent format)
@@ -65,6 +78,15 @@ const Quiz = ({ quizData, onQuizComplete, pdfId }) => {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
       console.log("🎯 Quiz completed. Submitting score:", newScore, "for pdfId:", pdfId);
+      console.log("🎯 Selected question indices (UI):", JSON.stringify(quizData.selectedIndices || []));
+      
+      // Also log template indices if they exist
+      if (quizData.metadata && quizData.metadata.templateSelectedIndices) {
+        console.log("🎯 Original template indices that will be saved:", JSON.stringify(quizData.metadata.templateSelectedIndices));
+      }
+      
+      // Don't reset question history after quiz completion so we can track which
+      // questions are being used over time - this ensures better randomization!
       onQuizComplete(newScore, pdfId);
     }
   };

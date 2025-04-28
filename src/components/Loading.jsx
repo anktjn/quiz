@@ -4,6 +4,16 @@ import { useState, useEffect } from "react";
 const Loading = ({ message, progressInfo }) => {
   const [funFacts, setFunFacts] = useState([]);
   const [currentFact, setCurrentFact] = useState("");
+  
+  // Parse progress information if available
+  const progressDetails = progressInfo && typeof progressInfo === 'object' ? progressInfo : {};
+  const { 
+    step,
+    totalSteps, 
+    currentChunk, 
+    totalChunks,
+    percentComplete
+  } = progressDetails;
 
   // Fun facts and interesting messages based on what's happening
   const processMessages = {
@@ -40,6 +50,11 @@ const Loading = ({ message, progressInfo }) => {
     "Preparing PDF for quiz...": [
       "Setting up the perfect quiz environment...",
       "Getting everything ready for your learning experience..."
+    ],
+    "Processing chunks...": [
+      "Breaking down content into digestible pieces...",
+      "Analyzing each section carefully...",
+      "Processing information chunk by chunk..."
     ]
   };
 
@@ -64,6 +79,51 @@ const Loading = ({ message, progressInfo }) => {
       return () => clearInterval(interval);
     }
   }, [funFacts]);
+
+  // Format the progress text based on available information
+  const getProgressText = () => {
+    if (!progressDetails) return null;
+    
+    let progressText = "";
+    
+    if (step && totalSteps) {
+      progressText += `Step ${step} of ${totalSteps}`;
+    }
+    
+    if (currentChunk && totalChunks) {
+      progressText += progressText ? " - " : "";
+      progressText += `Chunk ${currentChunk} of ${totalChunks}`;
+    }
+    
+    return progressText;
+  };
+
+  // Calculate progress percentage for the progress bar
+  const calculateProgress = () => {
+    if (percentComplete !== undefined) {
+      return percentComplete;
+    }
+    
+    if (step && totalSteps) {
+      const stepProgress = step / totalSteps;
+      
+      if (currentChunk && totalChunks) {
+        const chunkProgressInStep = (currentChunk / totalChunks) / totalSteps;
+        return (stepProgress - (1/totalSteps)) + chunkProgressInStep;
+      }
+      
+      return stepProgress;
+    }
+    
+    if (currentChunk && totalChunks) {
+      return currentChunk / totalChunks;
+    }
+    
+    return undefined;
+  };
+
+  const progressPercentage = calculateProgress();
+  const progressText = getProgressText();
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-base-100">
@@ -103,7 +163,22 @@ const Loading = ({ message, progressInfo }) => {
         </motion.div>
       )}
 
-      {progressInfo && (
+      {progressText && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-4 text-center"
+        >
+          <div className="text-sm text-gray-600 mb-2">{progressText}</div>
+          <progress 
+            className="progress progress-primary w-56" 
+            value={progressPercentage !== undefined ? progressPercentage * 100 : undefined} 
+            max="100"
+          ></progress>
+        </motion.div>
+      )}
+
+      {typeof progressInfo === 'string' && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
