@@ -124,6 +124,7 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
   const results = [];
   const errors = [];
   let completed = 0;
+  let lastSuccessfulId = null;
 
   // Process files sequentially to avoid race conditions
   const BATCH_SIZE = 1;
@@ -131,30 +132,33 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
   for (let i = 0; i < pdfFiles.length; i += BATCH_SIZE) {
     const batch = pdfFiles.slice(i, i + BATCH_SIZE);
     
-    // Process batch in sequence
-    for (const { file, metadata, coverFile } of batch) {
+    // Process batch in parallel
+    const batchPromises = batch.map(async ({ file, metadata, coverFile }, batchIndex) => {
+      const index = i + batchIndex;
       try {
         const result = await uploadPreloadedPDF(file, metadata, coverFile);
         results.push(result);
-        completed++;
+        lastSuccessfulId = result.id;
+        return { success: true, index };
       } catch (error) {
-        console.error(`Error uploading ${file.name}:`, error);
         errors.push({ file, metadata, error });
-        completed++;
+        return { success: false, index, error };
       }
-      
-      // Update progress
-      if (onProgress) {
-        onProgress({
-          percent: Math.round((completed / pdfFiles.length) * 100),
-          completed,
-          total: pdfFiles.length,
-          errors: errors.length
-        });
-      }
-      
-      // Add a small delay between uploads to prevent rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
+    });
+
+    // Wait for all uploads in this batch to complete
+    const batchResults = await Promise.all(batchPromises);
+    
+    // Update completion status
+    completed += batchResults.length;
+    if (onProgress) {
+      onProgress({
+        percent: Math.round((completed / pdfFiles.length) * 100),
+        completed,
+        total: pdfFiles.length,
+        errors: errors.length,
+        lastSuccessfulId
+      });
     }
   }
 
@@ -167,7 +171,8 @@ export async function bulkUploadPreloadedPDFs(pdfFiles, onProgress) {
     failed: errors,
     totalCount: pdfFiles.length,
     successCount: results.length,
-    errorCount: errors.length
+    errorCount: errors.length,
+    lastSuccessfulId
   };
 }
 

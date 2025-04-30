@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { uploadPreloadedPDF } from '../utils/preloadedPDFs';
 import { X, Loader2, Upload, Check } from 'lucide-react';
+import PDFTestButton from './PDFTestButton';
 
 export default function PreloadedPDFUpload({ onClose, onSuccess }) {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -10,6 +11,7 @@ export default function PreloadedPDFUpload({ onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [uploadedPdfId, setUploadedPdfId] = useState(null);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -41,6 +43,7 @@ export default function PreloadedPDFUpload({ onClose, onSuccess }) {
       const uploadedPdf = await uploadPreloadedPDF(selectedFile, metadata);
       
       setSuccess(true);
+      setUploadedPdfId(uploadedPdf.id);
       
       // Show success message
       const toast = document.createElement('div');
@@ -147,6 +150,18 @@ export default function PreloadedPDFUpload({ onClose, onSuccess }) {
             
             {error && (
               <div className="text-error text-sm mt-2">{error}</div>
+            )}
+            
+            {success && (
+              <div className="text-center mt-4">
+                <div className="flex justify-center items-center gap-2">
+                  <Check size={20} className="text-success" />
+                  <span className="text-success font-medium">Upload successful!</span>
+                </div>
+                <div className="mt-2">
+                  <PDFTestButton pdfId={uploadedPdfId} buttonSize="sm" />
+                </div>
+              </div>
             )}
             
             <div className="modal-action">
